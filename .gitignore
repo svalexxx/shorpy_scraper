@@ -2,7 +2,6 @@
 .env
 
 # Database
-shorpy_data.db
 posts_db.json
 
 # Python cache

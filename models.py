@@ -28,7 +28,8 @@ def init_db():
         title TEXT,
         image_url TEXT,
         description TEXT,
-        parsed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        parsed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        published INTEGER DEFAULT 0
     )
     ''')
     
@@ -41,6 +42,14 @@ def init_db():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+    
+    # Check if published column exists, add it if not
+    cursor.execute("PRAGMA table_info(parsed_posts)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    if 'published' not in columns:
+        cursor.execute("ALTER TABLE parsed_posts ADD COLUMN published INTEGER DEFAULT 0")
+        print("Added 'published' column to parsed_posts table")
     
     conn.commit()
 
@@ -58,6 +67,36 @@ class Storage:
         
         return result
     
+    def is_post_published(self, post_url):
+        """Check if a post has been published to Telegram."""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT published FROM parsed_posts WHERE post_url = ?", (post_url,))
+        result = cursor.fetchone()
+        
+        if result:
+            return bool(result[0])
+        return False
+    
+    def mark_post_published(self, post_url):
+        """Mark a post as published to Telegram."""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute(
+                "UPDATE parsed_posts SET published = 1 WHERE post_url = ?",
+                (post_url,)
+            )
+            
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Database error marking post as published: {e}")
+            conn.rollback()
+            return False
+    
     def add_post(self, post_data):
         """Add a post to the database."""
         conn = get_db_connection()
@@ -65,8 +104,9 @@ class Storage:
         
         try:
             cursor.execute(
-                "INSERT OR REPLACE INTO parsed_posts (post_url, title, image_url, description) VALUES (?, ?, ?, ?)",
-                (post_data['post_url'], post_data['title'], post_data.get('image_url', ''), post_data.get('description', ''))
+                "INSERT OR REPLACE INTO parsed_posts (post_url, title, image_url, description, published) VALUES (?, ?, ?, ?, ?)",
+                (post_data['post_url'], post_data['title'], post_data.get('image_url', ''), 
+                 post_data.get('description', ''), post_data.get('is_published', 0))
             )
             
             # Update the last_post checkpoint with this post URL
@@ -124,7 +164,7 @@ class Storage:
         cursor = conn.cursor()
         
         cursor.execute(
-            "SELECT post_url, title, image_url, description, parsed_at FROM parsed_posts ORDER BY parsed_at DESC LIMIT ?",
+            "SELECT post_url, title, image_url, description, parsed_at, published FROM parsed_posts ORDER BY parsed_at DESC LIMIT ?",
             (limit,)
         )
         
@@ -135,7 +175,8 @@ class Storage:
                 'title': row[1],
                 'image_url': row[2],
                 'description': row[3],
-                'parsed_at': row[4]
+                'parsed_at': row[4],
+                'is_published': bool(row[5])
             })
         
         return posts

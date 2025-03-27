@@ -12,6 +12,8 @@ This project scrapes historic photos from [Shorpy.com](https://www.shorpy.com) a
 - Checkpoint tracking for the last processed post
 - Option to automatically delete files after processing
 - Automatic cleanup of temporary image files
+- Tracks published posts to avoid sending duplicates
+- GitHub Actions integration for automated running
 
 ## Setup
 
@@ -40,6 +42,13 @@ pip install -r requirements.txt
      TELEGRAM_BOT_TOKEN=your_bot_token_here
      TELEGRAM_CHANNEL_ID=-1002647149349  # Your channel ID
      ```
+
+5. GitHub Actions setup (optional):
+   - Fork or push this repository to GitHub
+   - Add your Telegram bot token and channel ID as repository secrets:
+     - Go to your repository → Settings → Secrets and variables → Actions
+     - Create `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` secrets
+   - The workflow will run automatically every 6 hours
 
 ## Usage
 
@@ -97,6 +106,7 @@ python test_channel.py
 - `test_channel.py`: Test Telegram connection
 - `scraped_posts/`: Directory for saved posts
 - `temp_images/`: Temporary directory for downloaded images (automatically cleaned up)
+- `.github/workflows/`: GitHub Actions workflow definitions
 
 ## License
 

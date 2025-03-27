@@ -39,6 +39,17 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             
         print(f"Found {len(posts)} posts to process.")
         
+        # Filter out posts that have already been published (unless in test mode)
+        if posts_to_process is None:  # Not in test mode
+            new_posts = [post for post in posts if not post.get('is_published', False)]
+            if len(new_posts) != len(posts):
+                print(f"Filtered out {len(posts) - len(new_posts)} already published posts.")
+                posts = new_posts
+                
+            if not posts:
+                print("No new posts to send to Telegram.")
+                return
+        
         # Initialize Telegram bot if needed
         bot = None
         if use_telegram:
@@ -62,6 +73,8 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                     telegram_success = await bot.send_post(post)
                     if telegram_success:
                         print(f"Successfully sent post to Telegram: {post['title']}")
+                        # Mark as published
+                        scraper.mark_as_published(post)
                 except Exception as e:
                     print(f"Error sending to Telegram: {str(e)}")
             

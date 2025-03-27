@@ -59,7 +59,7 @@ class ShorpyScraper:
                         break  # Stop processing, we've reached our last processed post
                     
                     # Check if post was already parsed or if we should skip due to checkpoint
-                    if not found_last_post and not storage.is_post_parsed(post_url):
+                    if not found_last_post or not storage.is_post_parsed(post_url):
                         print(f"New post found: {post_url}")
                         
                         # Find the image element (within content div)
@@ -120,11 +120,15 @@ class ShorpyScraper:
                         if image_url:
                             print(f"Image URL: {image_url}")
                         
+                        # Check if the post was previously published to Telegram
+                        is_published = storage.is_post_published(post_url)
+                        
                         posts.append({
                             'post_url': post_url,
                             'title': title,
                             'image_url': image_url,
-                            'description': description
+                            'description': description,
+                            'is_published': is_published
                         })
                     else:
                         print(f"Post already processed: {post_url}")
@@ -236,11 +240,15 @@ class ShorpyScraper:
                     if image_url:
                         print(f"Image URL: {image_url}")
                     
+                    # Check if the post was previously published to Telegram
+                    is_published = storage.is_post_published(post_url)
+                    
                     posts.append({
                         'post_url': post_url,
                         'title': title,
                         'image_url': image_url,
-                        'description': description
+                        'description': description,
+                        'is_published': is_published
                     })
                 except Exception as e:
                     print(f"Error parsing post: {str(e)}")
@@ -259,4 +267,11 @@ class ShorpyScraper:
             storage.add_post(post_data)
             print(f"Marked post as parsed: {post_data['title']}")
         except Exception as e:
-            print(f"Error marking post as parsed: {str(e)}") 
+            print(f"Error marking post as parsed: {str(e)}")
+            
+    def mark_as_published(self, post_data):
+        try:
+            storage.mark_post_published(post_data['post_url'])
+            print(f"Marked post as published: {post_data['title']}")
+        except Exception as e:
+            print(f"Error marking post as published: {str(e)}") 
