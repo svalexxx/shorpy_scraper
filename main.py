@@ -6,10 +6,18 @@ import json
 import sys
 import argparse
 import shutil
+import logging
 from datetime import datetime
 from scraper import ShorpyScraper
 from telegram_bot import TelegramBot
 from models import storage
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('shorpy_scraper')
 
 # Create output directory
 OUTPUT_DIR = "scraped_posts"
@@ -280,9 +288,23 @@ def main():
     parser.add_argument('--purge', action='store_true', help='Purge all files in the scraped_posts directory')
     parser.add_argument('--checkpoint', action='store_true', help='Display checkpoint information')
     parser.add_argument('--test-posts', type=int, nargs='?', const=2, help='Process a specific number of posts for testing (default: 2)')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     args = parser.parse_args()
     
+    # Set log level
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Verbose logging enabled")
+    
     print("Starting Shorpy Scraper...")
+    
+    # Print environment info in verbose mode
+    if args.verbose:
+        logger.debug(f"Python version: {sys.version}")
+        logger.debug(f"Current working directory: {os.getcwd()}")
+        logger.debug(f"Environment variables: TELEGRAM_BOT_TOKEN: {'set' if os.getenv('TELEGRAM_BOT_TOKEN') else 'not set'}, TELEGRAM_CHANNEL_ID: {'set' if os.getenv('TELEGRAM_CHANNEL_ID') else 'not set'}")
+        logger.debug(f"Output directory: {OUTPUT_DIR}")
+        logger.debug(f"Temp directory: {TEMP_DIR}")
     
     # Check if user wants to see checkpoint information
     if args.checkpoint:
