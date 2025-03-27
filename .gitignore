@@ -2,6 +2,7 @@
 .env
 
 # Database
+# NOTE: shorpy_data.db is intentionally not ignored to allow GitHub Actions to commit it
 posts_db.json
 
 # Python cache

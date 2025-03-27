@@ -88,16 +88,22 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
-          # Make sure working directory is clean
-          git checkout -- .
-          git clean -fd
+          # Make a backup of the database file
+          cp shorpy_data.db shorpy_data.db.bak
+          
+          # Update local repository
           git pull
+          
+          # Restore the database file if it was removed
+          if [ ! -f "shorpy_data.db" ] && [ -f "shorpy_data.db.bak" ]; then
+            cp shorpy_data.db.bak shorpy_data.db
+          fi
           
           echo "Git status before adding files:"
           git status
           
-          # Add the database file
-          git add shorpy_data.db
+          # Force add the database file (even if it's in gitignore)
+          git add -f shorpy_data.db
           
           echo "Git status after adding files:"
           git status
