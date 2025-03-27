@@ -1,0 +1,30 @@
+# Environment variables
+.env
+
+# Database
+shorpy_data.db
+posts_db.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Data directories
+scraped_posts/
+temp_images/
+
+# Debug and test files
+shorpy_response.html
+
+# OS specific files
+.DS_Store
+Thumbs.db 
