@@ -7,6 +7,10 @@ on:
   # Allow manual triggering
   workflow_dispatch:
 
+# Permissions needed for the workflow
+permissions:
+  contents: write  # Needed for pushing to the repository
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -39,20 +43,22 @@ jobs:
           fi
           echo "Secrets are properly configured"
       
-      - name: Verify existing database
+      - name: Initialize database and directories
         run: |
-          echo "Checking for existing database:"
-          ls -la
+          # Create directories
+          mkdir -p scraped_posts
+          mkdir -p temp_images
+          
+          # Run the initialization script
+          python init_db.py
+          
+          # Check if the database was created successfully
           if [ -f "shorpy_data.db" ]; then
-            echo "Database exists, checking contents:"
+            echo "Database initialized successfully"
             sqlite3 shorpy_data.db ".tables"
-            sqlite3 shorpy_data.db "SELECT COUNT(*) FROM parsed_posts;"
-            sqlite3 shorpy_data.db "SELECT COUNT(*) FROM checkpoints;"
           else
-            echo "Database does not exist yet, it will be created during script execution"
-            # Create directories needed
-            mkdir -p scraped_posts
-            mkdir -p temp_images
+            echo "::error::Failed to initialize database"
+            exit 1
           fi
 
       - name: Run scraper
@@ -77,21 +83,29 @@ jobs:
             echo "Database file does not exist"
           fi
 
-      - name: Commit and push checkpoint data if changed
+      - name: Commit and push checkpoint data
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
+          # Make sure working directory is clean
+          git checkout -- .
+          git clean -fd
+          git pull
+          
           echo "Git status before adding files:"
           git status
           
-          git add shorpy_data.db || echo "Failed to add shorpy_data.db"
+          # Add the database file
+          git add shorpy_data.db
           
           echo "Git status after adding files:"
           git status
           
-          if git diff --quiet && git diff --staged --quiet; then
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
             echo "No changes to commit"
           else
+            # Commit and push
             git commit -m "Update checkpoint data [skip ci]"
-            git push || echo "Failed to push changes" 
+            git push 
