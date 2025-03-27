@@ -83,35 +83,5 @@ jobs:
             echo "Database file does not exist"
           fi
 
-      - name: Commit and push checkpoint data
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # Make a backup of the database file
-          cp shorpy_data.db shorpy_data.db.bak
-          
-          # Update local repository
-          git pull
-          
-          # Restore the database file if it was removed
-          if [ ! -f "shorpy_data.db" ] && [ -f "shorpy_data.db.bak" ]; then
-            cp shorpy_data.db.bak shorpy_data.db
-          fi
-          
-          echo "Git status before adding files:"
-          git status
-          
-          # Force add the database file (even if it's in gitignore)
-          git add -f shorpy_data.db
-          
-          echo "Git status after adding files:"
-          git status
-          
-          # Check if there are changes to commit
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            # Commit and push
-            git commit -m "Update checkpoint data [skip ci]"
-            git push 
+      - name: Commit database changes
+        run: python commit_db.py 
