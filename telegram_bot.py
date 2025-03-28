@@ -239,10 +239,19 @@ class TelegramBot:
         try:
             logger.info("Sending status report")
             
-            # Use report channel ID if available, otherwise use the specified recipient or default channel
+            # Determine target chat ID
             target_chat_id = self.report_channel_id
             if recipient:
-                logger.info(f"Note: Using configured report channel instead of {recipient}")
+                # If recipient starts with @, it's a username - we can't send to bots
+                if recipient.startswith('@'):
+                    logger.warning(f"Cannot send report to bot username {recipient}. Using configured report channel.")
+                else:
+                    # Try to use the recipient as a chat ID
+                    try:
+                        target_chat_id = int(recipient)
+                        logger.info(f"Sending report to chat ID: {target_chat_id}")
+                    except ValueError:
+                        logger.warning(f"Invalid chat ID format: {recipient}. Using configured report channel.")
             
             # Build the message
             message = f"📊 <b>Shorpy Scraper Status Report</b>\n\n"
@@ -316,7 +325,7 @@ class TelegramBot:
                 text=message,
                 parse_mode='HTML'
             )
-            logger.info(f"Status report sent successfully to channel")
+            logger.info(f"Status report sent successfully to chat ID: {target_chat_id}")
             return True
         except Exception as e:
             logger.error(f"Error sending status report: {str(e)}")
