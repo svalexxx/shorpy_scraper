@@ -88,4 +88,4 @@ jobs:
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
-          python commit_db.py 
+          python src/utils/commit_db.py 
