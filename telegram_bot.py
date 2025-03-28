@@ -27,6 +27,7 @@ class TelegramBot:
         """Initialize the Telegram bot with credentials from environment variables."""
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.channel_id = os.getenv('TELEGRAM_CHANNEL_ID')
+        self.report_channel_id = os.getenv('TELEGRAM_REPORT_CHANNEL_ID', self.channel_id)
         
         if not self.token:
             logger.error("TELEGRAM_BOT_TOKEN not set in environment variables")
@@ -38,6 +39,8 @@ class TelegramBot:
         
         self.bot = Bot(token=self.token)
         logger.info(f"Telegram bot initialized with channel ID: {self.channel_id}")
+        if self.report_channel_id != self.channel_id:
+            logger.info(f"Reports will be sent to separate channel ID: {self.report_channel_id}")
         
     @retry(
         stop=stop_after_attempt(3),
@@ -223,13 +226,17 @@ class TelegramBot:
         try:
             logger.info("Sending status report")
             
-            # Always use the channel ID for now since we don't have a way to resolve usernames to chat IDs
-            target_chat_id = self.channel_id
+            # Use report channel ID if available, otherwise use the specified recipient or default channel
+            target_chat_id = self.report_channel_id
             if recipient:
-                logger.info(f"Note: Sending to default channel instead of {recipient} (username resolution not supported)")
+                logger.info(f"Note: Using configured report channel instead of {recipient}")
             
             # Build the message
             message = f"📊 <b>Shorpy Scraper Status Report</b>\n\n"
+            
+            # Add environment indicator
+            env_type = "Production" if self.channel_id.startswith("-100") else "Development"
+            message += f"<b>Environment:</b> {env_type}\n\n"
             
             # Run stats section
             if "start_time" in stats:
