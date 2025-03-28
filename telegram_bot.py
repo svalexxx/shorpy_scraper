@@ -223,17 +223,10 @@ class TelegramBot:
         try:
             logger.info("Sending status report")
             
-            # Determine target chat ID
+            # Always use the channel ID for now since we don't have a way to resolve usernames to chat IDs
             target_chat_id = self.channel_id
             if recipient:
-                if recipient.startswith('@'):
-                    # Using username - needs to be resolved to chat_id
-                    target_chat_id = recipient
-                    logger.info(f"Sending report to user: {recipient}")
-                else:
-                    # Assuming it's a direct chat ID
-                    target_chat_id = recipient
-                    logger.info(f"Sending report to chat ID: {recipient}")
+                logger.info(f"Note: Sending to default channel instead of {recipient} (username resolution not supported)")
             
             # Build the message
             message = f"📊 <b>Shorpy Scraper Status Report</b>\n\n"
@@ -303,7 +296,7 @@ class TelegramBot:
                 text=message,
                 parse_mode='HTML'
             )
-            logger.info("Status report sent successfully")
+            logger.info(f"Status report sent successfully to channel")
             return True
         except Exception as e:
             logger.error(f"Error sending status report: {str(e)}")
