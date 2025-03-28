@@ -51,6 +51,7 @@ jobs:
           
           # Run the initialization script
           pwd
+          ls -la
           python /src/database/init_db.py
           
           # Check if the database was created successfully
