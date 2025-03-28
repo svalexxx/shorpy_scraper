@@ -50,9 +50,7 @@ jobs:
           mkdir -p temp_images
           
           # Run the initialization script
-          pwd
-          ls -la
-          python /src/database/init_db.py
+          python src/database/init_db.py
           
           # Check if the database was created successfully
           if [ -f "shorpy_data.db" ]; then
