@@ -1,0 +1,31 @@
+{
+  "name": "Shorpy Scraper Webhook",
+  "description": "Telegram webhook handler for the Shorpy Scraper project",
+  "repository": "https://github.com/svalexxx/shorpy_scraper",
+  "keywords": ["python", "flask", "telegram", "webhook", "shorpy"],
+  "env": {
+    "TELEGRAM_BOT_TOKEN": {
+      "description": "Your Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "GITHUB_TOKEN": {
+      "description": "GitHub Personal Access Token with 'workflow' scope",
+      "required": true
+    },
+    "GITHUB_REPO_OWNER": {
+      "description": "GitHub repository owner (username)",
+      "required": true,
+      "value": "svalexxx"
+    },
+    "GITHUB_REPO_NAME": {
+      "description": "GitHub repository name",
+      "required": true,
+      "value": "shorpy_scraper"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+} 

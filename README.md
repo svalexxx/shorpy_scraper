@@ -271,6 +271,56 @@ You can add interactive buttons to your channel:
    - This works through a webhook that connects Telegram to GitHub Actions
    - To set up, use the provided `.github/workflows/last10posts.yml` workflow
 
+### Webhook Deployment to Heroku
+
+To enable the Telegram buttons to trigger GitHub Actions, you need to deploy the webhook to Heroku:
+
+1. **Deploy to Heroku with one click**:
+
+   [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
+
+   This will prompt you to enter:
+   - Your Telegram Bot Token
+   - A GitHub token with 'workflow' scope
+   - Your GitHub username and repository name
+
+2. **Or manually deploy**:
+   ```bash
+   # Login to Heroku
+   heroku login
+
+   # Create a new Heroku app
+   heroku create shorpy-webhook
+
+   # Set the necessary environment variables
+   heroku config:set TELEGRAM_BOT_TOKEN=your_bot_token
+   heroku config:set GITHUB_TOKEN=your_github_token
+   heroku config:set GITHUB_REPO_OWNER=your_github_username
+   heroku config:set GITHUB_REPO_NAME=shorpy_scraper
+
+   # Push to Heroku
+   git push heroku master
+   ```
+
+3. **Set up the Telegram webhook**:
+   ```bash
+   # Replace YOUR_BOT_TOKEN and YOUR_HEROKU_APP
+   curl -F "url=https://YOUR_HEROKU_APP.herokuapp.com/webhook" https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook
+   ```
+
+4. **Verify the webhook setup**:
+   ```bash
+   # Check that the webhook is properly set
+   curl https://api.telegram.org/botYOUR_BOT_TOKEN/getWebhookInfo
+   ```
+
+5. **Send a test button to your channel**:
+   ```bash
+   python main.py --send-button
+   ```
+
+Now when users click the "Show Last 10 Posts" button, it will trigger the GitHub Actions workflow to send the posts.
+
 ### Monitoring
 
 Use the monitoring script to check system health and get status reports:
