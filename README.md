@@ -14,6 +14,11 @@ This project scrapes historic photos from [Shorpy.com](https://www.shorpy.com) a
 - Automatic cleanup of temporary image files
 - Tracks published posts to avoid sending duplicates
 - GitHub Actions integration for automated running
+- Docker support for easy deployment
+- Asynchronous image downloading for better performance
+- Retry mechanism with exponential backoff for increased reliability
+- System monitoring with status reports and health checks
+- Silent mode to avoid sending test messages in production
 
 ## Setup
 
@@ -50,6 +55,32 @@ pip install -r requirements.txt
      - Create `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` secrets
    - The workflow will run automatically every 6 hours
 
+## Docker Deployment
+
+You can easily run the application using Docker:
+
+```bash
+# Build the Docker image
+docker build -t shorpy-scraper .
+
+# Run the container
+docker run -d --name shorpy-scraper \
+  -v ./scraped_posts:/app/scraped_posts \
+  -v ./shorpy_data.db:/app/shorpy_data.db \
+  -v ./.env:/app/.env \
+  shorpy-scraper
+```
+
+Or using docker-compose:
+
+```bash
+# Start the service
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+```
+
 ## Usage
 
 ### Basic Usage
@@ -60,6 +91,9 @@ python main.py --run-once
 
 # Run on a 12-hour schedule
 python main.py --schedule
+
+# Run in silent mode (no test messages)
+python main.py --schedule --silent
 ```
 
 ### Advanced Options
@@ -90,23 +124,49 @@ python main.py --test-posts 3
 python main.py --test-posts --delete-files
 ```
 
+### Monitoring
+
+Use the monitoring script to check system health and get status reports:
+
+```bash
+# Send a basic status report to Telegram
+python monitor.py --report
+
+# Send a detailed status report
+python monitor.py --report --detailed
+
+# Run a health check and send alerts if issues found
+python monitor.py --health-check
+
+# Clean up orphaned temporary files
+python monitor.py --cleanup
+```
+
 ### Testing
 
 ```bash
 # Test the connection to Telegram
 python test_channel.py
+
+# Test the asynchronous scraper
+python async_scraper.py
 ```
 
 ## File Structure
 
 - `main.py`: Main script
 - `scraper.py`: Handles scraping Shorpy.com
+- `async_scraper.py`: Asynchronous version of the scraper
 - `telegram_bot.py`: Handles sending posts to Telegram
 - `models.py`: Data storage
+- `monitor.py`: System monitoring and health checks
 - `test_channel.py`: Test Telegram connection
+- `commit_db.py`: Helper script for committing database changes
 - `scraped_posts/`: Directory for saved posts
-- `temp_images/`: Temporary directory for downloaded images (automatically cleaned up)
+- `temp_images/`: Temporary directory for downloaded images
 - `.github/workflows/`: GitHub Actions workflow definitions
+- `Dockerfile`: Docker configuration
+- `docker-compose.yml`: Docker Compose configuration
 
 ## License
 

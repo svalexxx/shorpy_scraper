@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  scraper:
+    build: .
+    volumes:
+      - ./scraped_posts:/app/scraped_posts
+      - ./shorpy_data.db:/app/shorpy_data.db
+      - ./.env:/app/.env
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+    command: python main.py --schedule --silent 
