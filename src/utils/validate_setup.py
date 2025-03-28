@@ -1,102 +1,154 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Validation script to check environment configuration and dependencies
-before deploying to GitHub Actions.
+Validation script to check that the Shorpy Scraper setup is correct.
+Performs checks on the environment, directories, dependencies, and configuration.
 """
+
 import os
 import sys
+import socket
+import time
+import logging
+import platform
+import importlib
 import sqlite3
-import requests
+from pathlib import Path
 from dotenv import load_dotenv
 
-def check_environment():
-    """Check if all required environment variables are set."""
-    print("Checking environment variables...")
-    
-    # Load .env file
-    load_dotenv()
-    
-    # Check Telegram Bot Token
-    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-    if not bot_token:
-        print("❌ TELEGRAM_BOT_TOKEN is not set")
-        return False
-    print("✅ TELEGRAM_BOT_TOKEN is set")
-    
-    # Check Telegram Channel ID
-    channel_id = os.getenv('TELEGRAM_CHANNEL_ID')
-    if not channel_id:
-        print("❌ TELEGRAM_CHANNEL_ID is not set")
-        return False
-    print("✅ TELEGRAM_CHANNEL_ID is set")
-    
-    return True
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("shorpy-validator")
 
-def test_telegram_api():
-    """Test connection to Telegram API."""
-    print("Testing Telegram API connection...")
-    
-    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-    channel_id = os.getenv('TELEGRAM_CHANNEL_ID')
-    
-    # Test getMe endpoint
-    try:
-        response = requests.get(f"https://api.telegram.org/bot{bot_token}/getMe")
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get('ok'):
-            print(f"✅ Bot connection successful: @{data['result']['username']}")
-        else:
-            print(f"❌ Bot connection failed: {data.get('description', 'Unknown error')}")
-            return False
-    except Exception as e:
-        print(f"❌ Error connecting to Telegram API: {str(e)}")
-        return False
-    
-    # Test channel/chat access
-    try:
-        # Format channel_id - remove @ if present
-        if channel_id.startswith('@'):
-            chat_id = channel_id
-        else:
-            chat_id = channel_id
-            
-        response = requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": "🧪 Test message from validation script. If you see this, setup is correct!"
-            }
-        )
-        
-        data = response.json()
-        if data.get('ok'):
-            print(f"✅ Message sent to channel successfully")
-        else:
-            print(f"❌ Message to channel failed: {data.get('description', 'Unknown error')}")
-            return False
-    except Exception as e:
-        print(f"❌ Error sending message to channel: {str(e)}")
-        return False
-    
-    return True
+# Project root is the parent directory of this script
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 
-def check_db_access():
-    """Test database access and schema."""
-    print("Testing database access...")
-    
-    # Check if DB file exists, create it if not
-    db_path = "shorpy_data.db"
-    db_exists = os.path.exists(db_path)
-    
-    if db_exists:
-        print(f"✅ Database file exists: {db_path}")
+def check_python_version():
+    """Check that Python version is 3.7 or higher."""
+    logger.info("Checking Python version...")
+    version = platform.python_version_tuple()
+    if int(version[0]) >= 3 and int(version[1]) >= 7:
+        logger.info(f"✅ Python version is {platform.python_version()} (3.7+ required)")
+        return True
     else:
-        print(f"ℹ️ Database file does not exist, will be created: {db_path}")
+        logger.error(f"❌ Python version is {platform.python_version()} (3.7+ required)")
+        return False
+
+def check_directories():
+    """Check that required directories exist."""
+    logger.info("Checking required directories...")
+    
+    required_dirs = [
+        "data/scraped_posts",
+        "data/temp_images",
+        "logs",
+        "src/scraper",
+        "src/bot",
+        "src/database",
+        "src/utils",
+        "scripts"
+    ]
+    
+    all_exist = True
+    for directory in required_dirs:
+        path = PROJECT_ROOT / directory
+        if path.exists() and path.is_dir():
+            logger.info(f"✅ Directory exists: {directory}")
+        else:
+            logger.error(f"❌ Directory missing: {directory}")
+            all_exist = False
+    
+    return all_exist
+
+def check_required_files():
+    """Check that required files exist."""
+    logger.info("Checking required files...")
+    
+    required_files = [
+        "main.py",
+        "requirements.txt",
+        "src/scraper/shorpy.py",
+        "src/bot/telegram_bot.py",
+        "src/database/models.py",
+        "scripts/shorpy.sh"
+    ]
+    
+    all_exist = True
+    for file in required_files:
+        path = PROJECT_ROOT / file
+        if path.exists() and path.is_file():
+            logger.info(f"✅ File exists: {file}")
+        else:
+            logger.error(f"❌ File missing: {file}")
+            all_exist = False
+    
+    return all_exist
+
+def check_dependencies():
+    """Check that required Python dependencies are installed."""
+    logger.info("Checking Python dependencies...")
+    
+    required_packages = [
+        "requests",
+        "beautifulsoup4",
+        "python-telegram-bot",
+        "schedule",
+        "python-dotenv",
+        "aiohttp",
+        "aiofiles",
+        "tenacity"
+    ]
+    
+    all_installed = True
+    for package in required_packages:
+        try:
+            importlib.import_module(package.replace('-', '_'))
+            logger.info(f"✅ Package installed: {package}")
+        except ImportError:
+            logger.error(f"❌ Package missing: {package}")
+            all_installed = False
+    
+    return all_installed
+
+def check_env_file():
+    """Check that .env file exists and has required variables."""
+    logger.info("Checking .env file...")
+    
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        logger.error("❌ .env file not found")
+        return False
+    
+    # Load environment variables
+    load_dotenv(env_path)
+    
+    required_vars = [
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_CHANNEL_ID"
+    ]
+    
+    all_vars_set = True
+    for var in required_vars:
+        if os.getenv(var):
+            logger.info(f"✅ Environment variable set: {var}")
+        else:
+            logger.error(f"❌ Environment variable missing: {var}")
+            all_vars_set = False
+    
+    return all_vars_set
+
+def check_database():
+    """Check that database exists and has required tables."""
+    logger.info("Checking database...")
+    
+    db_path = PROJECT_ROOT / "shorpy_data.db"
+    if not db_path.exists():
+        logger.error("❌ Database file not found")
+        return False
     
     try:
-        # Connect to database
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
@@ -104,76 +156,134 @@ def check_db_access():
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = [row[0] for row in cursor.fetchall()]
         
-        expected_tables = ['parsed_posts', 'checkpoints']
-        missing_tables = [table for table in expected_tables if table not in tables]
+        required_tables = ["parsed_posts", "urls"]
+        all_tables_exist = True
         
-        if missing_tables:
-            print(f"ℹ️ Some tables are missing: {', '.join(missing_tables)}")
-            print("   These will be created when the script runs.")
-        else:
-            print("✅ All required tables exist")
-            
-            # Check 'published' column in parsed_posts table
-            cursor.execute("PRAGMA table_info(parsed_posts)")
-            columns = [column[1] for column in cursor.fetchall()]
-            
-            if 'published' in columns:
-                print("✅ 'published' column exists in parsed_posts table")
+        for table in required_tables:
+            if table in tables:
+                logger.info(f"✅ Database table exists: {table}")
             else:
-                print("ℹ️ 'published' column is missing, will be created when the script runs")
+                logger.error(f"❌ Database table missing: {table}")
+                all_tables_exist = False
         
-    except Exception as e:
-        print(f"❌ Error checking database: {str(e)}")
+        conn.close()
+        return all_tables_exist
+    
+    except sqlite3.Error as e:
+        logger.error(f"❌ Database error: {str(e)}")
         return False
-    finally:
-        if 'conn' in locals():
-            conn.close()
-    
-    return True
 
-def check_directories():
-    """Check required directories exist."""
-    print("Checking required directories...")
+def check_network():
+    """Check network connectivity to shorpy.com and Telegram API."""
+    logger.info("Checking network connectivity...")
     
-    required_dirs = ['scraped_posts', 'temp_images']
-    for directory in required_dirs:
-        if os.path.exists(directory) and os.path.isdir(directory):
-            print(f"✅ Directory exists: {directory}")
+    targets = [
+        ("shorpy.com", 443),
+        ("api.telegram.org", 443)
+    ]
+    
+    all_reachable = True
+    for host, port in targets:
+        try:
+            # Create socket connection to check if service is reachable
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result == 0:
+                logger.info(f"✅ Network connection successful: {host}:{port}")
+            else:
+                logger.error(f"❌ Network connection failed: {host}:{port}")
+                all_reachable = False
+        
+        except Exception as e:
+            logger.error(f"❌ Network error for {host}:{port} - {str(e)}")
+            all_reachable = False
+    
+    return all_reachable
+
+def check_permissions():
+    """Check that script has necessary permissions."""
+    logger.info("Checking permissions...")
+    
+    # Check data directory is writable
+    data_dir = PROJECT_ROOT / "data"
+    db_file = PROJECT_ROOT / "shorpy_data.db"
+    
+    all_permissions_ok = True
+    try:
+        test_file = data_dir / "permission_test.txt"
+        with open(test_file, 'w') as f:
+            f.write("test")
+        os.remove(test_file)
+        logger.info("✅ Data directory is writable")
+    except Exception as e:
+        logger.error(f"❌ Data directory is not writable: {str(e)}")
+        all_permissions_ok = False
+    
+    # Check database is writable
+    try:
+        if db_file.exists():
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+            
+            # Try to write to a temporary table
+            cursor.execute("CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY)")
+            cursor.execute("DROP TABLE IF EXISTS test_table")
+            
+            conn.close()
+            logger.info("✅ Database is writable")
         else:
-            print(f"ℹ️ Directory does not exist, will be created: {directory}")
+            logger.warning("⚠️ Database doesn't exist, skipping write test")
+    except Exception as e:
+        logger.error(f"❌ Database is not writable: {str(e)}")
+        all_permissions_ok = False
     
-    return True
+    return all_permissions_ok
 
 def main():
-    """Run all checks."""
-    print("=" * 50)
-    print("Shorpy Scraper Setup Validation")
-    print("=" * 50)
+    """Run all validation checks."""
+    logger.info("Starting Shorpy Scraper validation...\n")
     
-    # Run all checks
-    env_check = check_environment()
-    dir_check = check_directories()
-    db_check = check_db_access()
+    checks = [
+        ("Python Version", check_python_version),
+        ("Required Directories", check_directories),
+        ("Required Files", check_required_files),
+        ("Dependencies", check_dependencies),
+        ("Environment Variables", check_env_file),
+        ("Database", check_database),
+        ("Network Connectivity", check_network),
+        ("Permissions", check_permissions)
+    ]
     
-    # Only test Telegram if environment variables are set
-    telegram_check = False
-    if env_check:
-        telegram_check = test_telegram_api()
+    results = {}
     
-    # Print summary
-    print("\n" + "=" * 50)
-    print("Validation Summary:")
-    print(f"Environment: {'✅ PASS' if env_check else '❌ FAIL'}")
-    print(f"Directories: {'✅ PASS' if dir_check else '❌ FAIL'}")
-    print(f"Database: {'✅ PASS' if db_check else '❌ FAIL'}")
-    print(f"Telegram API: {'✅ PASS' if telegram_check else '❌ FAIL' if env_check else '⏭️ SKIPPED'}")
+    for check_name, check_func in checks:
+        logger.info(f"\n--- {check_name} Check ---")
+        try:
+            result = check_func()
+            results[check_name] = result
+        except Exception as e:
+            logger.error(f"❌ Check failed with error: {str(e)}")
+            results[check_name] = False
     
-    # Final result
-    all_passed = env_check and dir_check and db_check and (telegram_check if env_check else True)
-    print("\nFinal Result:", "✅ READY FOR GITHUB ACTIONS" if all_passed else "❌ ISSUES FOUND")
-    print("=" * 50)
+    # Summary
+    logger.info("\n--- Validation Summary ---")
+    all_checks_passed = True
     
-    return 0 if all_passed else 1
+    for check_name, result in results.items():
+        status = "✅ PASS" if result else "❌ FAIL"
+        logger.info(f"{status}: {check_name}")
+        if not result:
+            all_checks_passed = False
+    
+    if all_checks_passed:
+        logger.info("\n✅ All checks passed! Your Shorpy Scraper setup is valid.")
+        return 0
+    else:
+        logger.error("\n❌ Some checks failed. Please fix the issues and run validation again.")
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main()) 

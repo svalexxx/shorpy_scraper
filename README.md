@@ -20,7 +20,25 @@ This project scrapes historic photos from [Shorpy.com](https://www.shorpy.com) a
 - System monitoring with status reports and health checks
 - Silent mode to avoid sending test messages in production
 
-## Setup
+## Installation
+
+### Quick Install
+
+For a guided installation process, use the installation script:
+
+```bash
+python -m src.utils.install
+```
+
+The script will:
+1. Create necessary directories
+2. Help you set up the .env file with your Telegram credentials
+3. Create the database
+4. Install dependencies
+5. Set up automatic running (systemd service or cron job)
+6. Test your setup
+
+### Manual Setup
 
 1. Create a virtual environment and install dependencies:
 
@@ -46,14 +64,109 @@ pip install -r requirements.txt
      ```
      TELEGRAM_BOT_TOKEN=your_bot_token_here
      TELEGRAM_CHANNEL_ID=-1002647149349  # Your channel ID
+     TELEGRAM_REPORT_CHANNEL_ID=29909617  # Your personal chat ID (for reports)
      ```
 
-5. GitHub Actions setup (optional):
-   - Fork or push this repository to GitHub
-   - Add your Telegram bot token and channel ID as repository secrets:
-     - Go to your repository → Settings → Secrets and variables → Actions
-     - Create `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID` secrets
-   - The workflow will run automatically every 6 hours
+5. Create the database:
+   ```bash
+   python -m src.database.create_empty_db
+   ```
+
+6. Validate your setup:
+   ```bash
+   python -m src.utils.validate_setup
+   ```
+
+### Production Setup
+
+For a robust production setup, consider:
+
+1. **Systemd Service** (Linux):
+   ```bash
+   # Create a service file
+   sudo nano /etc/systemd/system/shorpy-scraper.service
+   
+   # Add this content (adjust paths as needed):
+   [Unit]
+   Description=Shorpy Scraper Service
+   After=network.target
+   
+   [Service]
+   Type=simple
+   User=your_username
+   WorkingDirectory=/path/to/shorpy_scraper
+   ExecStart=/path/to/python /path/to/shorpy_scraper/main.py --schedule --silent
+   Restart=on-failure
+   RestartSec=60
+   
+   [Install]
+   WantedBy=multi-user.target
+   
+   # Enable and start the service
+   sudo systemctl daemon-reload
+   sudo systemctl enable shorpy-scraper.service
+   sudo systemctl start shorpy-scraper.service
+   ```
+
+2. **Cron Job** (Unix/Linux):
+   ```bash
+   # Edit crontab
+   crontab -e
+   
+   # Add this line to run every 6 hours
+   0 */6 * * * cd /path/to/shorpy_scraper && /path/to/python main.py --run-once --silent
+   ```
+
+3. **Windows Task Scheduler**:
+   - Open Task Scheduler
+   - Create a new task
+   - Set trigger to run daily, repeat every 6 hours
+   - Action: Start a program
+   - Program: `C:\path\to\python.exe`
+   - Arguments: `C:\path\to\shorpy_scraper\main.py --run-once --silent`
+   - Start in: `C:\path\to\shorpy_scraper`
+
+4. **Docker** (recommended for consistent environment):
+   ```bash
+   # Build and run with docker-compose
+   docker-compose up -d
+   ```
+
+## GitHub Actions setup (optional):
+
+- Fork or push this repository to GitHub
+- Add your Telegram bot token and channel ID as repository secrets:
+  - Go to your repository → Settings → Secrets and variables → Actions
+  - Create `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`, and `TELEGRAM_REPORT_CHANNEL_ID` secrets
+- The workflow will run automatically every 6 hours
+
+### Health & Monitoring
+
+For better monitoring in production:
+
+1. **Enable reporting**:
+   ```bash
+   # Run with reporting to receive status reports
+   python main.py --schedule --silent --report-to YOUR_CHAT_ID
+   ```
+
+2. **Set up periodic health checks**:
+   ```bash
+   # Add to your crontab
+   0 12 * * * cd /path/to/shorpy_scraper && /path/to/python -m src.utils.monitor --health-check
+   ```
+
+3. **View logs**:
+   ```bash
+   # Check logs for errors
+   tail -f logs/shorpy.log
+   ```
+
+4. **Cleanup**:
+   ```bash
+   # Clean up temporary files periodically
+   0 0 * * 0 cd /path/to/shorpy_scraper && /path/to/python -m src.utils.monitor --cleanup
+   ```
 
 ## Docker Deployment
 
