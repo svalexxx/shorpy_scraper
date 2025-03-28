@@ -154,19 +154,85 @@ python async_scraper.py
 
 ## File Structure
 
-- `main.py`: Main script
-- `scraper.py`: Handles scraping Shorpy.com
-- `async_scraper.py`: Asynchronous version of the scraper
-- `telegram_bot.py`: Handles sending posts to Telegram
-- `models.py`: Data storage
-- `monitor.py`: System monitoring and health checks
-- `test_channel.py`: Test Telegram connection
-- `commit_db.py`: Helper script for committing database changes
-- `scraped_posts/`: Directory for saved posts
-- `temp_images/`: Temporary directory for downloaded images
-- `.github/workflows/`: GitHub Actions workflow definitions
-- `Dockerfile`: Docker configuration
-- `docker-compose.yml`: Docker Compose configuration
+The project is organized into the following directory structure for better maintainability and separation of concerns:
+
+```
+shorpy_scraper/
+├── src/                    # Source code
+│   ├── scraper/            # Scraping logic
+│   │   ├── shorpy.py       # Main scraper implementation
+│   │   └── async_scraper.py # Asynchronous scraper implementation
+│   ├── bot/                # Telegram bot
+│   │   └── telegram_bot.py # Bot implementation
+│   ├── database/           # Database operations
+│   │   ├── models.py       # Database models
+│   │   ├── init_db.py      # Database initialization
+│   │   └── create_empty_db.py # Database creation script
+│   └── utils/              # Utility functions
+│       ├── monitor.py      # Monitoring and reporting
+│       ├── commit_db.py    # Database commit utility
+│       └── validate_setup.py # Setup validation
+├── tests/                  # Test files
+├── scripts/                # Shell scripts
+│   └── shorpy.sh           # Main control script
+├── data/                   # Data storage
+│   ├── scraped_posts/      # Downloaded images
+│   └── temp_images/        # Temporary files
+├── logs/                   # Log files
+├── main.py                 # Main entry point
+├── requirements.txt        # Python dependencies
+├── Dockerfile              # Docker configuration
+└── docker-compose.yml      # Docker Compose configuration
+```
+
+### Key Components
+
+- **src/scraper/**: Contains the main and asynchronous implementations of the Shorpy scraper
+- **src/bot/**: Telegram bot implementation for sending photos to the channel
+- **src/database/**: Database models and utilities for storing and retrieving data
+- **src/utils/**: Utility scripts for monitoring, reporting, and maintenance
+- **scripts/**: Shell scripts for common operations
+- **data/**: Directories for storing downloaded images and temporary files
+- **tests/**: Test files for different components
+
+### Command-line Interface
+
+The main script (`main.py`) can be run with various command-line arguments:
+
+```
+python main.py [options]
+```
+
+Options:
+- `--run-once`: Run the scraper once and exit
+- `--schedule`: Run on a schedule (default: every 12 hours)
+- `--reprocess`: Reprocess already parsed (but not published) posts
+- `--channel CHANNEL`: Set the Telegram channel ID to send posts to
+- `--silent`: Skip sending test message on startup (for production)
+- `--verbose`: Enable verbose logging
+- `--delete-files`: Delete image files after processing
+- `--purge`: Purge all database entries
+- `--checkpoint`: Reset the last post checkpoint
+- `--test-posts NUM`: Process a number of posts for testing
+- `--report-to USERNAME`: Send a report to the specified username/chat ID
+
+### Using the Shell Script
+
+For convenience, a shell script is provided to run common operations:
+
+```
+./scripts/shorpy.sh [command]
+```
+
+Commands:
+- `run`: Run the scraper once and exit
+- `run-silent`: Run the scraper in silent mode
+- `run-report`: Run the scraper once and send a report
+- `schedule`: Run on a 12-hour schedule
+- `docker-build`: Build the Docker image
+- `docker-run`: Run the scraper in a Docker container
+- `status`: Send a status report
+- ...and more
 
 ## License
 
