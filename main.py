@@ -345,75 +345,154 @@ async def process_test_posts(num_posts=2, delete_files=False, report_to=None):
     except Exception as e:
         print(f"Error processing test posts: {str(e)}")
 
-def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Shorpy Scraper')
-    parser.add_argument('--schedule', action='store_true', help='Run the scraper on a schedule')
-    parser.add_argument('--run-once', action='store_true', help='Run the scraper once and exit')
-    parser.add_argument('--reprocess', action='store_true', help='Reprocess existing posts')
-    parser.add_argument('--channel', type=str, help='Override the Telegram channel ID in the .env file')
-    parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
-    parser.add_argument('--purge', action='store_true', help='Purge all files in the output directory')
-    parser.add_argument('--checkpoint', action='store_true', help='Display checkpoint information')
-    parser.add_argument('--test-posts', type=int, nargs='?', const=2, help='Test mode: process a specific number of posts (default: 2)')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Scraper for Shorpy.com with Telegram integration')
+    
+    # Running mode options
+    parser.add_argument('--run-once', action='store_true', help='Run once and exit')
+    parser.add_argument('--schedule', action='store_true', help='Run on a schedule')
+    
+    # Processing options
+    parser.add_argument('--reprocess', action='store_true', help='Reprocess already parsed posts')
+    parser.add_argument('--channel', type=str, help='Channel ID to send posts to')
     parser.add_argument('--silent', action='store_true', help='Skip sending test message on startup (for production)')
-    parser.add_argument('--report-to', type=str, help='Send a run report to a specific Telegram username (e.g., @username)')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
     
-    args = parser.parse_args()
+    # Special commands
+    parser.add_argument('--purge', action='store_true', help='Purge all database entries')
+    parser.add_argument('--checkpoint', action='store_true', help='Reset checkpoint')
+    parser.add_argument('--test-posts', nargs='?', const=2, type=int, help='Process a number of posts for testing')
+    parser.add_argument('--report-to', type=str, help='Send report to this chat ID or username')
+    parser.add_argument('--last-10-posts', action='store_true', help='Send the last 10 posts to the channel')
+    parser.add_argument('--send-button', action='store_true', help='Send a button to show the last 10 posts')
+    parser.add_argument('--interactive', action='store_true', help='Run the bot in interactive mode')
     
-    # If verbose flag is set, increase logging level
+    return parser.parse_args()
+
+async def main():
+    """Main function."""
+    args = parse_args()
+    
+    # Enable verbose logging if requested
     if args.verbose:
-        logging.getLogger('shorpy_scraper').setLevel(logging.DEBUG)
-        print("Verbose logging enabled")
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Verbose logging enabled")
+        logger.debug(f"Python version: {sys.version}")
+        logger.debug(f"Current working directory: {os.getcwd()}")
+        logger.debug(f"Environment variables: TELEGRAM_BOT_TOKEN: {'set' if os.getenv('TELEGRAM_BOT_TOKEN') else 'not set'}, TELEGRAM_CHANNEL_ID: {'set' if os.getenv('TELEGRAM_CHANNEL_ID') else 'not set'}")
+        logger.debug(f"Output directory: {storage.output_dir}")
+        logger.debug(f"Temp directory: {storage.temp_dir}")
     
-    # Set up channel override if provided
-    if args.channel:
-        os.environ['TELEGRAM_CHANNEL_ID'] = args.channel
-        print(f"Channel override: {args.channel}")
-    
-    # Display checkpoint information if requested
-    if args.checkpoint:
-        display_checkpoints()
+    # Check if interactive mode is requested
+    if args.interactive:
+        from src.bot.telegram_bot import run_bot
+        run_bot()
         return
     
-    # Purge all files if requested
+    # Initialize Telegram bot if credentials are available
+    bot = None
+    try:
+        bot = await run_setup(args.channel, args.silent)
+    except Exception as e:
+        logger.error(f"Error setting up Telegram: {str(e)}")
+        bot = None
+    
+    # Process special commands
     if args.purge:
-        purge_files()
+        logger.info("Purging all database entries")
+        storage.purge_database()
         return
     
-    # Reprocess existing posts if requested
-    if args.reprocess:
-        print("Reprocessing existing posts")
-        asyncio.run(reprocess_existing_posts(args.delete_files, args.report_to))
-        return
-    
-    # Test mode: process specific number of posts
-    if args.test_posts is not None:
-        print(f"Test mode: Processing {args.test_posts} posts")
-        asyncio.run(process_test_posts(args.test_posts, args.delete_files, args.report_to))
-        return
-    
-    # Run once and exit
-    if args.run_once:
-        print("Running once and exiting")
-        asyncio.run(run_setup(use_telegram=True, silent=args.silent, report_to=args.report_to))
-        return
-    
-    # Run on a schedule (default: every 12 hours)
-    if args.schedule or not (args.run_once or args.reprocess or args.checkpoint or args.purge or args.test_posts is not None):
-        print("Running on a schedule (every 12 hours)")
+    if args.checkpoint:
+        last_post = storage.get_checkpoint("last_post_url")
+        title = storage.get_checkpoint("last_post_title")
+        timestamp = storage.get_checkpoint("last_processed")
         
-        # Schedule the job
-        schedule.every(12).hours.do(lambda: asyncio.run(run_setup(use_telegram=True, silent=args.silent, report_to=args.report_to)))
+        logger.info("\nCheckpoint Information:")
+        logger.info(f"Last processed post: {title}")
+        logger.info(f"URL: {last_post}")
+        logger.info(f"Processed at: {timestamp}")
+        logger.info(f"Total posts processed: {storage.count_parsed_posts()}")
+        return
+    
+    if args.test_posts:
+        num_posts = int(args.test_posts)
+        logger.info(f"Test mode: Processing {num_posts} posts")
+        scraper = ShorpyScraper()
+        test_posts = scraper.get_test_posts(num_posts)
         
-        # Run immediately at startup
-        asyncio.run(run_setup(use_telegram=True, silent=args.silent, report_to=args.report_to))
+        logger.info(f"Found {len(test_posts)} test posts")
         
-        # Keep the script running and check for scheduled jobs
-        while True:
-            schedule.run_pending()
-            time.sleep(60)  # Check every minute
+        for post in test_posts:
+            logger.info(f"Post: {post['title']}")
+            # Save locally
+            storage.save_post(post)
+            # Send to Telegram
+            if bot:
+                await bot.send_post(post)
+            
+            # Delete files if requested
+            if args.delete_files:
+                storage.delete_post_files(post)
+        
+        return
+    
+    # Send the last 10 posts if requested
+    if args.last_10_posts and bot:
+        await bot.send_last_10_posts()
+        return
+    
+    # Send a button to show the last 10 posts if requested
+    if args.send_button and bot:
+        await bot.send_latest_posts_button()
+        return
+    
+    # Regular operation - process posts
+    scraper = ShorpyScraper()
+    
+    # Schedule mode
+    if args.schedule:
+        import schedule
+        
+        # Setup scheduled job
+        def job():
+            asyncio.run(process_posts(args, bot, scraper))
+        
+        # Run job immediately
+        logger.info("Running initial job...")
+        asyncio.run(process_posts(args, bot, scraper))
+        
+        # Schedule job to run every 12 hours
+        schedule.every(12).hours.do(job)
+        
+        logger.info("Scheduled to run every 12 hours...")
+        
+        try:
+            while True:
+                schedule.run_pending()
+                time.sleep(60)  # Check every minute
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+    
+    # Run once mode
+    else:
+        await process_posts(args, bot, scraper)
+        
+        if args.run_once:
+            logger.info("Run-once mode enabled, exiting.")
+        else:
+            logger.info("Waiting for next run.")
+            # Keep script running even in non-schedule mode
+            try:
+                while True:
+                    time.sleep(60)
+            except KeyboardInterrupt:
+                logger.info("Shutting down...")
+    
+    # Clean up temp files
+    storage.cleanup_temp_files()
 
 def create_index_html():
     """Create an index.html file to browse all saved posts."""
@@ -492,4 +571,4 @@ def create_index_html():
         print(f"Error creating index.html: {str(e)}")
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

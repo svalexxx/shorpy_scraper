@@ -19,6 +19,8 @@ This project scrapes historic photos from [Shorpy.com](https://www.shorpy.com) a
 - Retry mechanism with exponential backoff for increased reliability
 - System monitoring with status reports and health checks
 - Silent mode to avoid sending test messages in production
+- Interactive commands and buttons in Telegram
+- "Last 10 posts" feature with inline buttons
 
 ## Installation
 
@@ -235,7 +237,39 @@ python main.py --test-posts 3
 
 # Test mode with file deletion
 python main.py --test-posts --delete-files
+
+# Send the last 10 posts to the channel
+python main.py --last-10-posts
+
+# Send a button to show the last 10 posts
+python main.py --send-button
+
+# Run the bot in interactive mode (with commands)
+python main.py --interactive
 ```
+
+### Interactive Commands
+
+The bot now supports interactive commands when run with `--interactive`:
+
+- `/start` - Show welcome message and available commands
+- `/help` - Show help message
+- `/latest` - Show the last 10 posts
+- `/status` - Show the current status
+
+### Telegram Buttons
+
+You can add interactive buttons to your channel:
+
+1. **Last 10 Posts Button**: 
+   - Send a button that users can click to see the last 10 posts
+   - To add this button to your channel: `python main.py --send-button`
+   - When users click the button, it will trigger the bot to send the last 10 posts
+
+2. **GitHub Actions Integration**:
+   - The button can trigger a GitHub Actions workflow to send posts
+   - This works through a webhook that connects Telegram to GitHub Actions
+   - To set up, use the provided `.github/workflows/last10posts.yml` workflow
 
 ### Monitoring
 

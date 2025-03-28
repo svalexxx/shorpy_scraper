@@ -1,0 +1,48 @@
+name: Send Last 10 Posts
+
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Type of action (send_posts or send_button)'
+        required: true
+        type: choice
+        options:
+          - send_posts
+          - send_button
+        default: 'send_posts'
+
+jobs:
+  send-posts:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Send last 10 posts
+        if: ${{ github.event.inputs.type == 'send_posts' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
+        run: python main.py --last-10-posts --verbose
+      
+      - name: Send button for last 10 posts
+        if: ${{ github.event.inputs.type == 'send_button' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
+        run: python main.py --send-button --verbose 

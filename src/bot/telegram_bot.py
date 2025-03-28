@@ -1,6 +1,7 @@
 import os
 import asyncio
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.error import TelegramError, NetworkError, TimedOut
 from dotenv import load_dotenv
 import logging
@@ -381,3 +382,200 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error sending status report: {str(e)}")
             return False 
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((NetworkError, TimedOut))
+    )
+    async def send_latest_posts_button(self) -> bool:
+        """Send a message with a button to retrieve the last 10 posts.
+        
+        Returns:
+            bool: True if message was sent successfully, False otherwise
+        """
+        try:
+            logger.info("Sending 'latest posts' button message")
+            
+            # Create an inline keyboard with a button
+            keyboard = [
+                [InlineKeyboardButton("Show Last 10 Posts", callback_data="show_last_10_posts")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Send message with button
+            await self.bot.send_message(
+                chat_id=self.channel_id,
+                text="📸 Click the button below to see the last 10 Shorpy posts:",
+                reply_markup=reply_markup
+            )
+            
+            logger.info("'Latest posts' button message sent successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending 'latest posts' button message: {str(e)}")
+            return False
+
+    async def get_last_10_posts(self) -> List[Dict[str, Any]]:
+        """Get the last 10 posts from the database.
+        
+        Returns:
+            List[Dict[str, Any]]: List of the last 10 posts
+        """
+        try:
+            logger.info("Fetching last 10 posts from database")
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get the last 10 published posts
+            cursor.execute("""
+                SELECT post_url, title, image_path, published_at, description
+                FROM parsed_posts 
+                WHERE published = 1
+                ORDER BY published_at DESC
+                LIMIT 10
+            """)
+            
+            posts = []
+            for row in cursor.fetchall():
+                post_url, title, image_path, published_at, description = row
+                
+                # Get full image path
+                image_url = None
+                if image_path and os.path.exists(image_path):
+                    image_url = image_path
+                
+                posts.append({
+                    'post_url': post_url,
+                    'title': title,
+                    'image_url': image_url,
+                    'published_at': published_at,
+                    'description': description
+                })
+            
+            conn.close()
+            logger.info(f"Found {len(posts)} posts")
+            return posts
+        
+        except Exception as e:
+            logger.error(f"Error getting last 10 posts: {str(e)}")
+            return []
+
+    async def send_last_10_posts(self) -> bool:
+        """Send the last 10 posts to the Telegram channel.
+        
+        Returns:
+            bool: True if all posts were sent successfully, False otherwise
+        """
+        try:
+            posts = await self.get_last_10_posts()
+            
+            if not posts:
+                await self.bot.send_message(
+                    chat_id=self.channel_id,
+                    text="No posts found in the database."
+                )
+                return True
+            
+            # Send an initial message
+            await self.bot.send_message(
+                chat_id=self.channel_id,
+                text=f"📷 Here are the last {len(posts)} Shorpy posts:"
+            )
+            
+            # Send each post
+            for post in posts:
+                success = await self.send_post(post)
+                if not success:
+                    logger.error(f"Failed to send post: {post['title']}")
+            
+            # Send a final message
+            await self.bot.send_message(
+                chat_id=self.channel_id,
+                text="End of the last posts list. Visit https://shorpy.com for more historic photos."
+            )
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error sending last 10 posts: {str(e)}")
+            return False
+
+def setup_bot_commands():
+    """Set up the bot with command handlers for interactive use."""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN environment variable is not set")
+        return None
+    
+    # Create the application
+    application = ApplicationBuilder().token(token).build()
+    
+    # Create a TelegramBot instance for command handling
+    bot_instance = TelegramBot()
+    
+    # Define command handlers
+    async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle the /start command."""
+        await update.message.reply_text(
+            "👋 Welcome to the Shorpy Scraper Bot!\n\n"
+            "This bot posts historic photos from Shorpy.com to this channel.\n\n"
+            "Available commands:\n"
+            "/latest - Show the last 10 posts\n"
+            "/status - Show the current status\n"
+            "/help - Show this help message"
+        )
+    
+    async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle the /help command."""
+        await update.message.reply_text(
+            "🔍 Shorpy Scraper Bot Help\n\n"
+            "Available commands:\n"
+            "/latest - Show the last 10 posts\n"
+            "/status - Show the current status\n"
+            "/help - Show this help message"
+        )
+    
+    async def latest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle the /latest command."""
+        await update.message.reply_text("📸 Fetching the last 10 posts from Shorpy.com...")
+        await bot_instance.send_last_10_posts()
+    
+    async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle the /status command."""
+        from src.utils.monitor import get_system_stats
+        
+        try:
+            stats = await get_system_stats()
+            await bot_instance.send_status_report(stats)
+        except Exception as e:
+            logger.error(f"Error in status command: {str(e)}")
+            await update.message.reply_text(f"❌ Error getting status: {str(e)}")
+    
+    async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle button callbacks."""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "show_last_10_posts":
+            await query.edit_message_text(text="📸 Fetching the last 10 posts from Shorpy.com...")
+            await bot_instance.send_last_10_posts()
+    
+    # Add handlers to the application
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("latest", latest_command))
+    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CallbackQueryHandler(button_callback))
+    
+    return application
+
+def run_bot():
+    """Run the bot in polling mode (for development/testing)."""
+    application = setup_bot_commands()
+    if application:
+        logger.info("Starting bot in polling mode...")
+        application.run_polling()
+    else:
+        logger.error("Could not start bot: application setup failed") 
