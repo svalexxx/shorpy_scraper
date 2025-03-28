@@ -4,17 +4,19 @@ Asynchronous scraper for Shorpy.com
 Provides better performance with concurrent image downloads
 """
 
-import os
-import sys
 import asyncio
-import logging
 import aiohttp
 import aiofiles
-import requests
 from bs4 import BeautifulSoup
-from typing import Dict, Any, List, Optional, Tuple
+import logging
+import os
+import tempfile
+import uuid
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-from models import storage
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+from src.database.models import get_db_connection, storage
 
 # Configure logging
 logging.basicConfig(

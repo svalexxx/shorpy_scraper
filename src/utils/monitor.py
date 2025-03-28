@@ -12,8 +12,8 @@ import argparse
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
-from models import storage, get_db_connection
-from telegram_bot import TelegramBot
+from src.database.models import storage, get_db_connection
+from src.bot.telegram_bot import TelegramBot
 
 # Configure logging
 logging.basicConfig(

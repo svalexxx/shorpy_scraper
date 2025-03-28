@@ -9,14 +9,28 @@ posts_db.json
 __pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
-.coverage
-htmlcov/
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environment
 venv/
-env/
 ENV/
+env/
 
 # Data directories
 scraped_posts/
@@ -27,4 +41,26 @@ shorpy_response.html
 
 # OS specific files
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+*.db
+*.log
+data/scraped_posts/*
+data/temp_images/*
+!data/scraped_posts/.gitkeep
+!data/temp_images/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Test files
+*.html
+*.json 

@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+from src.database.models import get_db_connection
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

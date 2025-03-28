@@ -4,8 +4,12 @@ Helper script to commit database changes to GitHub.
 This simplifies the GitHub Actions workflow by handling the Git operations in Python.
 """
 import os
-import subprocess
 import sys
+import subprocess
+import logging
+from datetime import datetime
+
+from src.database.models import get_db_connection
 
 def run_command(command):
     """Run a shell command and return output."""

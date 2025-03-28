@@ -8,9 +8,13 @@ import argparse
 import shutil
 import logging
 from datetime import datetime
-from scraper import ShorpyScraper
-from telegram_bot import TelegramBot
-from models import storage
+from typing import Optional
+from dotenv import load_dotenv
+
+from src.scraper.shorpy import ShorpyScraper
+from src.bot.telegram_bot import TelegramBot
+from src.database.models import get_db_connection, storage
+from src.utils.monitor import get_system_stats
 
 # Configure logging
 logging.basicConfig(

@@ -4,10 +4,11 @@ services:
   scraper:
     build: .
     volumes:
-      - ./scraped_posts:/app/scraped_posts
+      - ./data/scraped_posts:/app/data/scraped_posts
+      - ./data/temp_images:/app/data/temp_images
       - ./shorpy_data.db:/app/shorpy_data.db
       - ./.env:/app/.env
     environment:
-      - TZ=UTC
+      - TZ=Asia/Nicosia
     restart: unless-stopped
-    command: python main.py --schedule --silent --report-to @tessssto_bot 
+    command: python main.py --schedule --silent --report-to 29909617 

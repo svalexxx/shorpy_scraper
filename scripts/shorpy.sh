@@ -16,7 +16,7 @@ REPORT_BOT="@tessssto_bot"
 # Activate virtual environment if it exists
 if [ -d "venv" ]; then
     source venv/bin/activate
-    echo -e "${GREEN}Activated virtual environment${NC}"
+    VENV_ACTIVATED=true
 fi
 
 # Helper function to display usage
@@ -80,7 +80,7 @@ case "$1" in
     docker-run)
         echo -e "${GREEN}Running in Docker container...${NC}"
         docker run -d --name shorpy-scraper \
-            -v $(pwd)/scraped_posts:/app/scraped_posts \
+            -v $(pwd)/data/scraped_posts:/app/data/scraped_posts \
             -v $(pwd)/shorpy_data.db:/app/shorpy_data.db \
             -v $(pwd)/.env:/app/.env \
             shorpy-scraper
@@ -89,7 +89,7 @@ case "$1" in
     docker-run-report)
         echo -e "${GREEN}Running in Docker container with reports to $REPORT_BOT...${NC}"
         docker run -d --name shorpy-scraper \
-            -v $(pwd)/scraped_posts:/app/scraped_posts \
+            -v $(pwd)/data/scraped_posts:/app/data/scraped_posts \
             -v $(pwd)/shorpy_data.db:/app/shorpy_data.db \
             -v $(pwd)/.env:/app/.env \
             shorpy-scraper python main.py --schedule --silent --report-to $REPORT_BOT
@@ -102,31 +102,27 @@ case "$1" in
         ;;
     status)
         echo -e "${GREEN}Sending status report...${NC}"
-        python monitor.py --report
+        python -m src.utils.monitor --report
         ;;
     status-bot)
         echo -e "${GREEN}Sending status report to $REPORT_BOT...${NC}"
-        python monitor.py --report --target-bot $REPORT_BOT
-        ;;
-    detailed-status)
-        echo -e "${GREEN}Sending detailed status report...${NC}"
-        python monitor.py --report --detailed
+        python -m src.utils.monitor --report --target-bot $REPORT_BOT
         ;;
     health)
         echo -e "${GREEN}Running health check...${NC}"
-        python monitor.py --health-check
+        python -m src.utils.monitor --health-check
         ;;
     cleanup)
         echo -e "${GREEN}Cleaning up temporary files...${NC}"
-        python monitor.py --cleanup
+        python -m src.utils.monitor --cleanup
         ;;
     test)
         echo -e "${GREEN}Testing Telegram connection...${NC}"
-        python test_channel.py
+        python -m tests.test_channel
         ;;
     async-test)
         echo -e "${GREEN}Testing asynchronous scraper...${NC}"
-        python async_scraper.py
+        python -m src.scraper.async_scraper
         ;;
     update)
         echo -e "${GREEN}Updating dependencies...${NC}"
@@ -142,10 +138,9 @@ case "$1" in
         ;;
 esac
 
-# If we're in a virtual environment, deactivate it
-if [ -n "$VIRTUAL_ENV" ]; then
+# Deactivate virtual environment if it was activated
+if [ "$VENV_ACTIVATED" = true ]; then
     deactivate
-    echo -e "${GREEN}Deactivated virtual environment${NC}"
 fi
 
 exit 0 
