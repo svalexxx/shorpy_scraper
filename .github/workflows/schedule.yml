@@ -1,9 +1,9 @@
-name: Scheduled Shorpy Scraper
+name: Run Shorpy Scraper
 
 on:
   schedule:
     # Run every 6 hours (at minute 0 of hours 0, 6, 12, and 18)
-    - cron: '0 0,6,12,18 * * *'
+    - cron: '0 */6 * * *'
   # Allow manual triggering
   workflow_dispatch:
 
@@ -12,10 +12,10 @@ permissions:
   contents: write  # Needed for pushing to the repository
 
 jobs:
-  scrape:
+  scrape-shorpy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.9'
           
       - name: Install dependencies
         run: |
@@ -65,7 +65,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-        run: python main.py --run-once --verbose --silent
+        run: python main.py --run-once --verbose --silent --report-to @tessssto_bot
         
       - name: Debug DB file
         run: |
@@ -84,4 +84,7 @@ jobs:
           fi
 
       - name: Commit database changes
-        run: python commit_db.py 
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          python commit_db.py 

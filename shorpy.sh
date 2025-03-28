@@ -10,6 +10,9 @@ NC='\033[0m' # No Color
 # Ensure script stops on errors
 set -e
 
+# Setup default report bot
+REPORT_BOT="@tessssto_bot"
+
 # Activate virtual environment if it exists
 if [ -d "venv" ]; then
     source venv/bin/activate
@@ -25,11 +28,15 @@ function show_help {
     echo "Commands:"
     echo "  run               Run the scraper once and exit"
     echo "  run-silent        Run the scraper in silent mode"
+    echo "  run-report        Run the scraper once and send a report to $REPORT_BOT"
     echo "  schedule          Run on a 12-hour schedule"
+    echo "  schedule-report   Run on a 12-hour schedule with reports to $REPORT_BOT"
     echo "  docker-build      Build the Docker image"
     echo "  docker-run        Run the scraper in a Docker container"
+    echo "  docker-run-report Run in a Docker container with reports to $REPORT_BOT"
     echo "  docker-compose    Run with docker-compose"
     echo "  status            Send a status report"
+    echo "  status-bot        Send a status report to $REPORT_BOT"
     echo "  health            Run a health check"
     echo "  cleanup           Clean up temporary files"
     echo "  test              Test the connection to Telegram"
@@ -54,9 +61,17 @@ case "$1" in
         echo -e "${GREEN}Running scraper in silent mode...${NC}"
         python main.py --run-once --silent
         ;;
+    run-report)
+        echo -e "${GREEN}Running scraper once with report to $REPORT_BOT...${NC}"
+        python main.py --run-once --report-to $REPORT_BOT
+        ;;
     schedule)
         echo -e "${GREEN}Running on a 12-hour schedule...${NC}"
         python main.py --schedule
+        ;;
+    schedule-report)
+        echo -e "${GREEN}Running on a 12-hour schedule with reports to $REPORT_BOT...${NC}"
+        python main.py --schedule --report-to $REPORT_BOT
         ;;
     docker-build)
         echo -e "${GREEN}Building Docker image...${NC}"
@@ -71,6 +86,15 @@ case "$1" in
             shorpy-scraper
         echo -e "${GREEN}Container started. View logs with:${NC} docker logs -f shorpy-scraper"
         ;;
+    docker-run-report)
+        echo -e "${GREEN}Running in Docker container with reports to $REPORT_BOT...${NC}"
+        docker run -d --name shorpy-scraper \
+            -v $(pwd)/scraped_posts:/app/scraped_posts \
+            -v $(pwd)/shorpy_data.db:/app/shorpy_data.db \
+            -v $(pwd)/.env:/app/.env \
+            shorpy-scraper python main.py --schedule --silent --report-to $REPORT_BOT
+        echo -e "${GREEN}Container started. View logs with:${NC} docker logs -f shorpy-scraper"
+        ;;
     docker-compose)
         echo -e "${GREEN}Running with docker-compose...${NC}"
         docker-compose up -d
@@ -79,6 +103,10 @@ case "$1" in
     status)
         echo -e "${GREEN}Sending status report...${NC}"
         python monitor.py --report
+        ;;
+    status-bot)
+        echo -e "${GREEN}Sending status report to $REPORT_BOT...${NC}"
+        python monitor.py --report --target-bot $REPORT_BOT
         ;;
     detailed-status)
         echo -e "${GREEN}Sending detailed status report...${NC}"

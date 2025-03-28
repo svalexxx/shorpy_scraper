@@ -11,7 +11,7 @@ import logging
 import argparse
 import sqlite3
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from models import storage, get_db_connection
 from telegram_bot import TelegramBot
 
@@ -132,8 +132,13 @@ def get_recent_errors(max_count: int = 10) -> List[str]:
     
     return errors[::-1]  # Return in reverse order (newest first)
 
-async def send_status_report(detailed: bool = False):
-    """Send a status report to Telegram"""
+async def send_status_report(detailed: bool = False, target_bot: Optional[str] = None):
+    """Send a status report to Telegram
+    
+    Args:
+        detailed: Include detailed information in the report
+        target_bot: Optional username to send the report to (e.g., @username)
+    """
     try:
         stats = await get_system_stats()
         
@@ -146,12 +151,12 @@ async def send_status_report(detailed: bool = False):
         
         # Send the report
         bot = TelegramBot()
-        success = await bot.send_status_report(stats)
+        success = await bot.send_status_report(stats, target_bot)
         
         if success:
-            logger.info("Status report sent successfully")
+            logger.info(f"Status report sent successfully to {target_bot or 'default channel'}")
         else:
-            logger.error("Failed to send status report")
+            logger.error(f"Failed to send status report to {target_bot or 'default channel'}")
     
     except Exception as e:
         logger.error(f"Error in send_status_report: {str(e)}")
@@ -216,13 +221,14 @@ async def main():
     parser = argparse.ArgumentParser(description="Shorpy Scraper monitoring tool")
     parser.add_argument("--report", action="store_true", help="Send a status report")
     parser.add_argument("--detailed", action="store_true", help="Include detailed information in the report")
+    parser.add_argument("--target-bot", type=str, help="Send report to a specific Telegram username (e.g., @username)")
     parser.add_argument("--health-check", action="store_true", help="Run a health check and send alerts if issues found")
     parser.add_argument("--cleanup", action="store_true", help="Clean up orphaned temporary files")
     
     args = parser.parse_args()
     
     if args.report:
-        await send_status_report(args.detailed)
+        await send_status_report(args.detailed, args.target_bot)
     
     if args.health_check:
         await check_health()

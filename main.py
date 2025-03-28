@@ -34,8 +34,31 @@ async def test_telegram_connection(silent=False):
         print(f"Error testing Telegram connection: {str(e)}")
         return False
 
-async def process_posts(use_telegram=True, posts_to_process=None, delete_after_processing=False):
+async def send_run_report(stats, recipient_username=None):
+    """Send a run report to a specific recipient or the default channel.
+    
+    Args:
+        stats: Dictionary containing run statistics
+        recipient_username: Optional username to send report to (e.g., @username)
+    """
+    try:
+        bot = TelegramBot()
+        if recipient_username:
+            await bot.send_status_report(stats, recipient_username)
+        else:
+            await bot.send_status_report(stats)
+        logger.info(f"Run report sent to {recipient_username or 'default channel'}")
+    except Exception as e:
+        logger.error(f"Error sending run report: {str(e)}")
+
+async def process_posts(use_telegram=True, posts_to_process=None, delete_after_processing=False, report_to=None):
     scraper = ShorpyScraper()
+    stats = {
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "posts_processed": 0,
+        "posts_sent": 0,
+        "errors": 0
+    }
     
     try:
         # Get posts to process
@@ -50,15 +73,24 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                     await bot.send_no_posts_message()
                 except Exception as e:
                     print(f"Error sending 'no posts' message: {str(e)}")
+                    stats["errors"] += 1
+                    
+            # Still send the report even if no posts
+            stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
+            if report_to:
+                await send_run_report(stats, report_to)
             return
             
         print(f"Found {len(posts)} posts to process.")
+        stats["total_posts_found"] = len(posts)
         
         # Filter out posts that have already been published (unless in test mode)
         if posts_to_process is None:  # Not in test mode
             new_posts = [post for post in posts if not post.get('is_published', False)]
             if len(new_posts) != len(posts):
                 print(f"Filtered out {len(posts) - len(new_posts)} already published posts.")
+                stats["filtered_posts"] = len(posts) - len(new_posts)
                 posts = new_posts
                 
             if not posts:
@@ -70,6 +102,13 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                         await bot.send_no_posts_message()
                     except Exception as e:
                         print(f"Error sending 'no posts' message: {str(e)}")
+                        stats["errors"] += 1
+                
+                # Send the report even if no posts
+                stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
+                if report_to:
+                    await send_run_report(stats, report_to)
                 return
         
         # Initialize Telegram bot if needed
@@ -81,11 +120,13 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             except Exception as e:
                 print(f"Could not initialize Telegram bot: {str(e)}")
                 use_telegram = False
+                stats["errors"] += 1
                 
         # Process each post
         for post in posts:
             # Save post locally
             post_files = save_post_locally(post)
+            stats["posts_processed"] += 1
             
             # Try sending to Telegram if enabled
             telegram_success = False
@@ -95,10 +136,12 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                     telegram_success = await bot.send_post(post)
                     if telegram_success:
                         print(f"Successfully sent post to Telegram: {post['title']}")
+                        stats["posts_sent"] += 1
                         # Mark as published
                         scraper.mark_as_published(post)
                 except Exception as e:
                     print(f"Error sending to Telegram: {str(e)}")
+                    stats["errors"] += 1
             
             # If we should delete after processing and the post was sent successfully
             if delete_after_processing and telegram_success and post_files:
@@ -110,6 +153,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                             print(f"Deleted file after processing: {file_path}")
                 except Exception as e:
                     print(f"Error deleting files: {str(e)}")
+                    stats["errors"] += 1
             
             # If either saved locally or sent to Telegram, mark as processed
             scraper.mark_as_parsed(post)
@@ -122,6 +166,13 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
     
     except Exception as e:
         print(f"Error processing posts: {str(e)}")
+        stats["errors"] += 1
+    
+    # Send the run report
+    stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
+    if report_to:
+        await send_run_report(stats, report_to)
 
 def save_post_locally(post):
     """Save the post as an HTML file in the output directory."""
@@ -213,25 +264,24 @@ def job():
     else:
         asyncio.run(process_posts(use_telegram=True, delete_after_processing=delete_after_processing))
 
-async def run_setup(silent=False):
-    # Test Telegram connection
+async def run_setup(use_telegram=True, silent=False, report_to=None):
+    """
+    Run setup and verification steps
+    """
     try:
-        print("Testing Telegram connection...")
-        connection_ok = await test_telegram_connection(silent)
+        # Test Telegram connection if enabled
+        if use_telegram:
+            telegram_success = await test_telegram_connection(silent)
+            if not telegram_success:
+                print("Could not connect to Telegram. Make sure your bot token and channel ID are correct.")
+                print("Will continue without Telegram integration.")
+                use_telegram = False
         
-        if not connection_ok:
-            print("Telegram connection test failed. Posts will only be saved locally.")
-            print("To enable Telegram posting:")
-            print("1. Make sure your bot token is correct")
-            print("2. Create a channel and add the bot as an administrator")
-            print("3. Get the correct channel ID and update .env file")
-            return False
-        
-        print("Telegram connection test successful!")
-        return True
+        # Process posts from the website
+        await process_posts(use_telegram=use_telegram, report_to=report_to)
+    
     except Exception as e:
-        print(f"Setup error: {str(e)}")
-        return False
+        print(f"Error in run_setup: {str(e)}")
 
 def print_checkpoint_info():
     """Print information about the last processed post."""
@@ -273,8 +323,8 @@ def clean_temp_images():
     except Exception as e:
         print(f"Error cleaning temp images: {str(e)}")
 
-async def process_test_posts(num_posts=2, delete_after_processing=False):
-    """Process a specific number of posts for testing purposes."""
+async def process_test_posts(num_posts=2, delete_files=False, report_to=None):
+    """Process a specific number of posts for testing."""
     scraper = ShorpyScraper()
     
     try:
@@ -286,120 +336,80 @@ async def process_test_posts(num_posts=2, delete_after_processing=False):
             return
         
         print(f"Processing {len(posts)} test posts...")
-        await process_posts(use_telegram=True, posts_to_process=posts, delete_after_processing=delete_after_processing)
+        await process_posts(use_telegram=True, posts_to_process=posts, delete_after_processing=delete_files, report_to=report_to)
         print(f"Completed processing test posts.")
     except Exception as e:
         print(f"Error processing test posts: {str(e)}")
 
 def main():
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Shorpy Scraper and Telegram Bot')
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Shorpy Scraper')
+    parser.add_argument('--schedule', action='store_true', help='Run the scraper on a schedule')
+    parser.add_argument('--run-once', action='store_true', help='Run the scraper once and exit')
     parser.add_argument('--reprocess', action='store_true', help='Reprocess existing posts')
-    parser.add_argument('--channel', type=str, help='Override channel ID in .env file')
-    parser.add_argument('--schedule', action='store_true', help='Run on a schedule (every 12 hours)')
-    parser.add_argument('--run-once', action='store_true', help='Run once and exit')
-    parser.add_argument('--delete-files', action='store_true', help='Delete local files after sending them to Telegram')
-    parser.add_argument('--purge', action='store_true', help='Purge all files in the scraped_posts directory')
+    parser.add_argument('--channel', type=str, help='Override the Telegram channel ID in the .env file')
+    parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
+    parser.add_argument('--purge', action='store_true', help='Purge all files in the output directory')
     parser.add_argument('--checkpoint', action='store_true', help='Display checkpoint information')
-    parser.add_argument('--test-posts', type=int, nargs='?', const=2, help='Process a specific number of posts for testing (default: 2)')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--test-posts', type=int, nargs='?', const=2, help='Test mode: process a specific number of posts (default: 2)')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('--silent', action='store_true', help='Skip sending test message on startup (for production)')
+    parser.add_argument('--report-to', type=str, help='Send a run report to a specific Telegram username (e.g., @username)')
+    
     args = parser.parse_args()
     
-    # Set log level
+    # If verbose flag is set, increase logging level
     if args.verbose:
-        logger.setLevel(logging.DEBUG)
-        logger.debug("Verbose logging enabled")
+        logging.getLogger('shorpy_scraper').setLevel(logging.DEBUG)
+        print("Verbose logging enabled")
     
-    print("Starting Shorpy Scraper...")
-    
-    # Print environment info in verbose mode
-    if args.verbose:
-        logger.debug(f"Python version: {sys.version}")
-        logger.debug(f"Current working directory: {os.getcwd()}")
-        logger.debug(f"Environment variables: TELEGRAM_BOT_TOKEN: {'set' if os.getenv('TELEGRAM_BOT_TOKEN') else 'not set'}, TELEGRAM_CHANNEL_ID: {'set' if os.getenv('TELEGRAM_CHANNEL_ID') else 'not set'}")
-        logger.debug(f"Output directory: {OUTPUT_DIR}")
-        logger.debug(f"Temp directory: {TEMP_DIR}")
-    
-    # Check if user wants to see checkpoint information
-    if args.checkpoint:
-        print_checkpoint_info()
-        return
-    
-    # Check if user wants to purge all scraped files
-    if args.purge:
-        purge_scraped_files()
-        clean_temp_images()
-        return
-    
-    # Set environment variable for reprocessing if --reprocess flag is used
-    if args.reprocess:
-        os.environ['REPROCESS_POSTS'] = 'true'
-        print("Reprocessing mode enabled")
-    
-    # Set environment variable for deleting files if --delete-files flag is used
-    if args.delete_files:
-        os.environ['DELETE_AFTER_PROCESSING'] = 'true'
-        print("Delete after processing enabled")
-    
-    # Override channel ID if provided
+    # Set up channel override if provided
     if args.channel:
         os.environ['TELEGRAM_CHANNEL_ID'] = args.channel
-        print(f"Using override channel ID: {args.channel}")
+        print(f"Channel override: {args.channel}")
     
-    # Run setup and connection test
-    telegram_ok = asyncio.run(run_setup(args.silent))
+    # Display checkpoint information if requested
+    if args.checkpoint:
+        display_checkpoints()
+        return
     
-    # Process test posts if requested
+    # Purge all files if requested
+    if args.purge:
+        purge_files()
+        return
+    
+    # Reprocess existing posts if requested
+    if args.reprocess:
+        print("Reprocessing existing posts")
+        asyncio.run(reprocess_existing_posts(args.delete_files, args.report_to))
+        return
+    
+    # Test mode: process specific number of posts
     if args.test_posts is not None:
-        print(f"Test mode enabled: Processing {args.test_posts} posts...")
-        asyncio.run(process_test_posts(args.test_posts, args.delete_files))
-        print_checkpoint_info()
-        create_index_html()
-        clean_temp_images()
+        print(f"Test mode: Processing {args.test_posts} posts")
+        asyncio.run(process_test_posts(args.test_posts, args.delete_files, args.report_to))
         return
     
-    # Always proceed even if Telegram is not working
-    # We'll save posts locally
-    
-    if args.schedule:
-        # Schedule the job to run every 12 hours
-        schedule.every(12).hours.do(job)
-        print("Job scheduled to run every 12 hours.")
-    
-    # Run immediately on startup
-    print("Running initial job...")
-    job()
-    
-    # Print checkpoint info after processing
-    print_checkpoint_info()
-    
-    # Create index.html to browse saved posts
-    create_index_html()
-    
-    # If run-once flag is set, exit now
+    # Run once and exit
     if args.run_once:
-        print("Run-once mode enabled, exiting.")
-        clean_temp_images()
+        print("Running once and exiting")
+        asyncio.run(run_setup(use_telegram=True, silent=args.silent, report_to=args.report_to))
         return
     
-    # Keep the script running if schedule mode is enabled
-    if args.schedule:
-        print("Bot is now running. Press Ctrl+C to stop.")
-        print(f"Scraped posts are being saved to the '{OUTPUT_DIR}' directory.")
-        try:
-            while True:
-                schedule.run_pending()
-                time.sleep(60)
-        except KeyboardInterrupt:
-            print("Scraper stopped. Creating final index.html...")
-            create_index_html()
-            print_checkpoint_info()
-            clean_temp_images()
-            print("Done.")
-    else:
-        print("Job completed. Exiting.")
-        clean_temp_images()
+    # Run on a schedule (default: every 12 hours)
+    if args.schedule or not (args.run_once or args.reprocess or args.checkpoint or args.purge or args.test_posts is not None):
+        print("Running on a schedule (every 12 hours)")
+        
+        # Schedule the job
+        schedule.every(12).hours.do(lambda: asyncio.run(run_setup(use_telegram=True, silent=args.silent, report_to=args.report_to)))
+        
+        # Run immediately at startup
+        asyncio.run(run_setup(use_telegram=True, silent=args.silent, report_to=args.report_to))
+        
+        # Keep the script running and check for scheduled jobs
+        while True:
+            schedule.run_pending()
+            time.sleep(60)  # Check every minute
 
 def create_index_html():
     """Create an index.html file to browse all saved posts."""
