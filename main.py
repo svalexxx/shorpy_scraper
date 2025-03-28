@@ -25,11 +25,11 @@ TEMP_DIR = "temp_images"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-async def test_telegram_connection():
+async def test_telegram_connection(silent=False):
     """Test if the bot can connect to Telegram and send a message."""
     try:
         bot = TelegramBot()
-        return await bot.test_connection()
+        return await bot.test_connection(silent)
     except Exception as e:
         print(f"Error testing Telegram connection: {str(e)}")
         return False
@@ -43,6 +43,13 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         
         if not posts:
             print("No posts to process.")
+            # If Telegram is enabled and this is not a test run (real scheduled run)
+            if use_telegram and posts_to_process is None:
+                try:
+                    bot = TelegramBot()
+                    await bot.send_no_posts_message()
+                except Exception as e:
+                    print(f"Error sending 'no posts' message: {str(e)}")
             return
             
         print(f"Found {len(posts)} posts to process.")
@@ -56,6 +63,13 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                 
             if not posts:
                 print("No new posts to send to Telegram.")
+                # If Telegram is enabled, send a message that no new posts were found
+                if use_telegram:
+                    try:
+                        bot = TelegramBot()
+                        await bot.send_no_posts_message()
+                    except Exception as e:
+                        print(f"Error sending 'no posts' message: {str(e)}")
                 return
         
         # Initialize Telegram bot if needed
@@ -199,11 +213,11 @@ def job():
     else:
         asyncio.run(process_posts(use_telegram=True, delete_after_processing=delete_after_processing))
 
-async def run_setup():
+async def run_setup(silent=False):
     # Test Telegram connection
     try:
         print("Testing Telegram connection...")
-        connection_ok = await test_telegram_connection()
+        connection_ok = await test_telegram_connection(silent)
         
         if not connection_ok:
             print("Telegram connection test failed. Posts will only be saved locally.")
@@ -289,6 +303,7 @@ def main():
     parser.add_argument('--checkpoint', action='store_true', help='Display checkpoint information')
     parser.add_argument('--test-posts', type=int, nargs='?', const=2, help='Process a specific number of posts for testing (default: 2)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--silent', action='store_true', help='Skip sending test message on startup (for production)')
     args = parser.parse_args()
     
     # Set log level
@@ -333,7 +348,7 @@ def main():
         print(f"Using override channel ID: {args.channel}")
     
     # Run setup and connection test
-    telegram_ok = asyncio.run(run_setup())
+    telegram_ok = asyncio.run(run_setup(args.silent))
     
     # Process test posts if requested
     if args.test_posts is not None:

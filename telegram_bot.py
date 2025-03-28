@@ -39,8 +39,8 @@ class TelegramBot:
             print(f"Error creating bot: {str(e)}")
             raise
     
-    async def test_connection(self):
-        """Test if the bot can connect to Telegram API and send a message to the channel."""
+    async def test_connection(self, silent=False):
+        """Test if the bot can connect to Telegram API and send a message."""
         try:
             logger.info("Testing connection to Telegram API...")
             print("Testing connection to Telegram API...")
@@ -54,6 +54,12 @@ class TelegramBot:
                 logger.error(f"Could not get bot info: {str(e)}")
                 print(f"Could not get bot info: {str(e)}")
                 return False
+            
+            # If silent mode is enabled, skip sending the test message
+            if silent:
+                logger.info("Silent mode enabled, skipping test message")
+                print("Silent mode enabled, skipping test message")
+                return True
             
             # Now try to post a simple test message
             logger.info(f"Testing sending message to channel: {self.channel_id}")
@@ -210,4 +216,25 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Unexpected error sending message: {str(e)}")
             print(f"Unexpected error sending message: {str(e)}")
+            return False 
+
+    async def send_no_posts_message(self):
+        """Send a message indicating that no new posts were found."""
+        try:
+            message_text = "📢 No new posts found at Shorpy.com during the latest check."
+            
+            logger.info(f"Sending 'no new posts' message to channel: {self.channel_id}")
+            print(f"Sending 'no new posts' message to channel: {self.channel_id}")
+            
+            message = await self.bot.send_message(
+                chat_id=self.channel_id,
+                text=message_text
+            )
+            
+            logger.info(f"'No posts' message sent successfully! Message ID: {message.message_id}")
+            print(f"'No posts' message sent successfully! Message ID: {message.message_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending 'no posts' message: {str(e)}")
+            print(f"Error sending 'no posts' message: {str(e)}")
             return False 
