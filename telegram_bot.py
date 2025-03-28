@@ -102,8 +102,57 @@ class TelegramBot:
                 "total_posts_found": 0,
                 "posts_processed": 0,
                 "posts_sent": 0,
-                "warnings": ["No new posts found during this check"]
+                "warnings": ["No new posts found during this check"],
+                "disk_usage": {
+                    "db_size_mb": 0,
+                    "scraped_posts_size_mb": 0,
+                    "scraped_posts_file_count": 0
+                }
             }
+            
+            # Get database stats
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                # Get total posts
+                cursor.execute("SELECT COUNT(*) FROM parsed_posts")
+                stats["total_posts"] = cursor.fetchone()[0]
+                
+                # Get published posts count
+                cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                stats["published_posts"] = cursor.fetchone()[0]
+                
+                # Get posts in last 24h
+                cursor.execute("""
+                    SELECT COUNT(*) FROM parsed_posts 
+                    WHERE published = 1 
+                    AND published_at >= datetime('now', '-1 day')
+                """)
+                stats["posts_last_24h"] = cursor.fetchone()[0]
+                
+                conn.close()
+            except Exception as e:
+                logger.error(f"Error getting database stats: {str(e)}")
+            
+            # Get disk usage
+            try:
+                if os.path.exists("shorpy_data.db"):
+                    stats["disk_usage"]["db_size_mb"] = round(os.path.getsize("shorpy_data.db") / (1024 * 1024), 2)
+                
+                if os.path.exists("scraped_posts"):
+                    total_size = 0
+                    file_count = 0
+                    for dirpath, dirnames, filenames in os.walk("scraped_posts"):
+                        for f in filenames:
+                            fp = os.path.join(dirpath, f)
+                            total_size += os.path.getsize(fp)
+                            file_count += 1
+                    stats["disk_usage"]["scraped_posts_size_mb"] = round(total_size / (1024 * 1024), 2)
+                    stats["disk_usage"]["scraped_posts_file_count"] = file_count
+            except Exception as e:
+                logger.error(f"Error getting disk usage: {str(e)}")
+            
             await self.send_status_report(stats)
             
             logger.info("'No new posts' notification and report sent successfully")
