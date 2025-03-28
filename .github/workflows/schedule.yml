@@ -50,6 +50,7 @@ jobs:
           mkdir -p temp_images
           
           # Run the initialization script
+          pwd
           python /src/database/init_db.py
           
           # Check if the database was created successfully
