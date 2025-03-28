@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """
-Helper script to commit database changes to GitHub.
-This simplifies the GitHub Actions workflow by handling the Git operations in Python.
+This script is used to automatically commit changes to the database file
+when the scraper runs. It will add shorpy_data.db to the staging area
+and commit it with a message including the date and time.
 """
 import os
 import sys
@@ -9,109 +10,93 @@ import subprocess
 import logging
 from datetime import datetime
 
-from src.database.models import get_db_connection
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+try:
+    from src.database.models import get_db_connection
+except ImportError:
+    # Fallback to direct import if src package is not found
+    import sqlite3
+    def get_db_connection():
+        return sqlite3.connect('shorpy_data.db')
 
 def run_command(command):
-    """Run a shell command and return output."""
-    try:
-        result = subprocess.run(
-            command, 
-            shell=True, 
-            check=True, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE,
-            universal_newlines=True
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing command: {command}")
-        print(f"Error message: {e.stderr}")
-        return None
-
-def setup_git():
-    """Configure Git with GitHub Actions bot info."""
-    print("Setting up Git configuration...")
-    run_command('git config --global user.name "github-actions[bot]"')
-    run_command('git config --global user.email "github-actions[bot]@users.noreply.github.com"')
-    print("Git configuration completed")
-
-def backup_database():
-    """Create a backup of the database file."""
-    print("Creating database backup...")
-    if os.path.exists("shorpy_data.db"):
-        run_command("cp shorpy_data.db shorpy_data.db.bak")
-        print("Database backup created")
-    else:
-        print("Database file not found, cannot create backup")
-
-def update_repository():
-    """Pull the latest changes from the repository."""
-    print("Pulling latest changes from repository...")
-    output = run_command("git pull")
-    print(f"Git pull result: {output}")
-
-def restore_database():
-    """Restore the database from backup if needed."""
-    print("Checking if database restoration is needed...")
-    if not os.path.exists("shorpy_data.db") and os.path.exists("shorpy_data.db.bak"):
-        print("Database file missing, restoring from backup...")
-        run_command("cp shorpy_data.db.bak shorpy_data.db")
-        print("Database restored from backup")
-    else:
-        print("No restoration needed")
-
-def commit_changes():
-    """Commit and push database changes if any."""
-    print("Checking for changes to commit...")
-    
-    # Get status
-    status = run_command("git status --porcelain")
-    print(f"Git status: {status}")
-    
-    # Add database file
-    run_command("git add -f shorpy_data.db")
-    print("Added database file to staging area")
-    
-    # Check if there are changes to commit
-    diff_output = run_command("git diff --cached --name-only")
-    if "shorpy_data.db" in diff_output:
-        print("Changes detected, committing...")
-        commit_result = run_command('git commit -m "Update checkpoint data [skip ci]"')
-        print(f"Commit result: {commit_result}")
-        
-        push_result = run_command("git push")
-        print(f"Push result: {push_result}")
-        return True
-    else:
-        print("No changes to commit")
-        return False
+    """Run a shell command and return the output."""
+    process = subprocess.Popen(
+        command, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE,
+        shell=True
+    )
+    stdout, stderr = process.communicate()
+    return stdout.decode(), stderr.decode(), process.returncode
 
 def main():
-    """Main execution function."""
-    print("Starting database commit process...")
+    print("Starting DB commit process...")
     
-    # Setup Git
-    setup_git()
+    # Get the current date and time for the commit message
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Backup database
-    backup_database()
+    # Check if the database file exists
+    if not os.path.exists('shorpy_data.db'):
+        print("Database file not found. Nothing to commit.")
+        return
     
-    # Update repository
-    update_repository()
+    # Get database stats for the commit message
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get total posts
+        cursor.execute("SELECT COUNT(*) FROM parsed_posts")
+        total_posts = cursor.fetchone()[0]
+        
+        # Get published posts
+        cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+        published_posts = cursor.fetchone()[0]
+        
+        # Get recent changes
+        cursor.execute("""
+            SELECT COUNT(*) FROM parsed_posts 
+            WHERE datetime(published_at) > datetime('now', '-1 day')
+        """)
+        recent_changes = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        commit_message = f"Update database: {now} | {total_posts} total posts, {published_posts} published, {recent_changes} recent changes"
+    except Exception as e:
+        print(f"Error getting database stats: {str(e)}")
+        commit_message = f"Update database: {now}"
     
-    # Restore database if needed
-    restore_database()
+    # Stage the database file
+    stdout, stderr, code = run_command("git add shorpy_data.db")
+    if code != 0:
+        print(f"Error staging database file: {stderr}")
+        return
     
-    # Commit changes
-    changes_committed = commit_changes()
+    # Check if there are changes to commit
+    stdout, stderr, code = run_command("git diff --cached --quiet")
+    if code == 0:
+        print("No changes to commit.")
+        return
     
-    # Clean up backup
-    if os.path.exists("shorpy_data.db.bak"):
-        os.remove("shorpy_data.db.bak")
-        print("Removed database backup")
+    # Commit the changes
+    stdout, stderr, code = run_command(f'git commit -m "{commit_message}"')
+    if code != 0:
+        print(f"Error committing changes: {stderr}")
+        return
     
-    print("Database commit process completed")
-    return 0 if changes_committed else 0  # Always return success
+    print(f"Committed database changes: {commit_message}")
+    
+    # Push the changes to remote
+    stdout, stderr, code = run_command("git push")
+    if code != 0:
+        print(f"Error pushing changes: {stderr}")
+        return
+    
+    print("Successfully pushed database changes to remote.")
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    main() 
