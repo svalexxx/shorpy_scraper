@@ -89,11 +89,24 @@ class TelegramBot:
         try:
             logger.info("Sending 'no new posts' notification")
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Send to main channel
             await self.bot.send_message(
                 chat_id=self.channel_id,
                 text=f"📝 No new posts found at {now}.\nWill check again on the next run."
             )
-            logger.info("'No new posts' notification sent successfully")
+            
+            # Send detailed report to report channel
+            stats = {
+                "start_time": now,
+                "total_posts_found": 0,
+                "posts_processed": 0,
+                "posts_sent": 0,
+                "warnings": ["No new posts found during this check"]
+            }
+            await self.send_status_report(stats)
+            
+            logger.info("'No new posts' notification and report sent successfully")
             return True
         except Exception as e:
             logger.error(f"Error sending 'no new posts' message: {str(e)}")
