@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from models import storage
+from src.database.models import storage
 import re
 
 class ShorpyScraper:
