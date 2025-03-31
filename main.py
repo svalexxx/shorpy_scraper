@@ -492,7 +492,7 @@ async def main():
                 logger.info("Shutting down...")
     
     # Clean up temp files
-    storage.cleanup_temp_files()
+    clean_temp_images()
 
 def create_index_html():
     """Create an index.html file to browse all saved posts."""
