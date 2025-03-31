@@ -382,7 +382,7 @@ async def main():
         logger.debug(f"Python version: {sys.version}")
         logger.debug(f"Current working directory: {os.getcwd()}")
         logger.debug(f"Environment variables: TELEGRAM_BOT_TOKEN: {'set' if os.getenv('TELEGRAM_BOT_TOKEN') else 'not set'}, TELEGRAM_CHANNEL_ID: {'set' if os.getenv('TELEGRAM_CHANNEL_ID') else 'not set'}")
-        logger.debug(f"Output directory: {storage.output_dir}")
+        logger.debug(f"Output directory: {storage.posts_dir}")
         logger.debug(f"Temp directory: {storage.temp_dir}")
     
     # Check if interactive mode is requested
