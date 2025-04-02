@@ -11,4 +11,5 @@ services:
     environment:
       - TZ=Asia/Nicosia
     restart: unless-stopped
+    # Report will be sent after every run
     command: python main.py --schedule --silent --report-to 29909617 

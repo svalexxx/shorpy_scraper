@@ -79,7 +79,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                     print(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
                     
-            # Still send the report even if no posts
+            # Send the report
             stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
             if report_to:
@@ -108,7 +108,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                         print(f"Error sending 'no posts' message: {str(e)}")
                         stats["errors"] += 1
                 
-                # Send the report even if no posts
+                # Send the report
                 stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
                 if report_to:
@@ -172,7 +172,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         print(f"Error processing posts: {str(e)}")
         stats["errors"] += 1
     
-    # Send the run report
+    # Send the run report after every run
     stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
     if report_to:
