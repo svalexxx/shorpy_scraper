@@ -62,5 +62,6 @@ logs/*
 !logs/.gitkeep
 
 # Test files
+!src/api/templates/*.html
 *.html
 *.json 
