@@ -323,21 +323,40 @@ Now when users click the "Show Last 10 Posts" button, it will trigger the GitHub
 
 ### Monitoring
 
-Use the monitoring script to check system health and get status reports:
+Shorpy Scraper includes a monitoring system that provides insights into application performance and database status.
+
+#### Metrics Collection
+
+The application automatically collects various metrics while running:
+- **Counters**: Track operations like posts fetched, processed, published
+- **Timers**: Measure how long key operations take
+- **Gauges**: Track current values of various system metrics
+
+#### API Server & Dashboard
+
+A built-in API server and web dashboard provides real-time monitoring:
 
 ```bash
-# Send a basic status report to Telegram
-python monitor.py --report
+# Start the API server and dashboard
+python main.py --api-server
 
-# Send a detailed status report
-python monitor.py --report --detailed
-
-# Run a health check and send alerts if issues found
-python monitor.py --health-check
-
-# Clean up orphaned temporary files
-python monitor.py --cleanup
+# Specify a custom port
+python main.py --api-server --api-port 8080
 ```
+
+Once running, you can access:
+- Dashboard UI: http://localhost:5000/
+- Health check: http://localhost:5000/health
+- Metrics data: http://localhost:5000/metrics
+- Latest posts: http://localhost:5000/posts/latest
+- Unpublished posts: http://localhost:5000/posts/unpublished
+
+#### Error Handling
+
+The application includes a robust error handling system:
+- Automatic retries for intermittent errors
+- Detailed error logging
+- Safe execution modes to prevent catastrophic failures
 
 ### Testing
 

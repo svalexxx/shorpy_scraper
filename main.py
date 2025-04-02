@@ -347,32 +347,28 @@ async def process_test_posts(num_posts=2, delete_files=False, report_to=None):
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Scraper for Shorpy.com with Telegram integration')
-    
-    # Running mode options
+    parser = argparse.ArgumentParser(description='Shorpy Scraper - fetch and post historic photos')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--silent', '-s', action='store_true', help='Suppress console output')
     parser.add_argument('--run-once', action='store_true', help='Run once and exit')
-    parser.add_argument('--schedule', action='store_true', help='Run on a schedule')
-    
-    # Processing options
-    parser.add_argument('--reprocess', action='store_true', help='Reprocess already parsed posts')
-    parser.add_argument('--channel', type=str, help='Channel ID to send posts to')
-    parser.add_argument('--silent', action='store_true', help='Skip sending test message on startup (for production)')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
-    parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
-    
-    # Special commands
-    parser.add_argument('--purge', action='store_true', help='Purge all database entries')
-    parser.add_argument('--checkpoint', action='store_true', help='Reset checkpoint')
-    parser.add_argument('--test-posts', nargs='?', const=2, type=int, help='Process a number of posts for testing')
-    parser.add_argument('--report-to', type=str, help='Send report to this chat ID or username')
-    parser.add_argument('--last-10-posts', action='store_true', help='Send the last 10 posts to the channel')
-    parser.add_argument('--send-button', action='store_true', help='Send a button to show the last 10 posts')
-    parser.add_argument('--interactive', action='store_true', help='Run the bot in interactive mode')
-    
+    parser.add_argument('--daemon', action='store_true', help='Run as a daemon with scheduling')
+    parser.add_argument('--check-only', action='store_true', help='Check for new posts but don\'t post to Telegram')
+    parser.add_argument('--send-test', action='store_true', help='Send a test message to Telegram')
+    parser.add_argument('--last-10-posts', action='store_true', help='Send last 10 posts to Telegram')
+    parser.add_argument('--send-button', action='store_true', help='Send a button to Telegram channel to get last 10 posts')
+    parser.add_argument('--interactive', action='store_true', help='Enable interactive mode')
+    parser.add_argument('--create-index', action='store_true', help='Create an index.html file of all posts')
+    parser.add_argument('--validate', action='store_true', help='Validate your setup')
+    parser.add_argument('--install', action='store_true', help='Install the script')
+    parser.add_argument('--api-server', action='store_true', help='Run the monitoring API server')
+    parser.add_argument('--api-port', type=int, default=5000, help='Port for the API server')
+    parser.add_argument('--api-host', type=str, default='0.0.0.0', help='Host for the API server')
     return parser.parse_args()
 
 async def main():
-    """Main function."""
+    """Main entry point for the script."""
+    
+    # Parse command line arguments
     args = parse_args()
     
     # Enable verbose logging if requested
@@ -391,10 +387,17 @@ async def main():
         run_bot()
         return
     
+    # Run API server if requested
+    if args.api_server:
+        from src.api.stats import run_api_server
+        logger.info(f"Starting API server on {args.api_host}:{args.api_port}")
+        run_api_server(host=args.api_host, port=args.api_port)
+        return
+    
     # Initialize Telegram bot if credentials are available
     bot = None
     try:
-        bot = await run_setup(args.channel, args.silent)
+        bot = await run_setup(args.silent)
     except Exception as e:
         logger.error(f"Error setting up Telegram: {str(e)}")
         bot = None
@@ -453,7 +456,7 @@ async def main():
     scraper = ShorpyScraper()
     
     # Schedule mode
-    if args.schedule:
+    if args.daemon:
         import schedule
         
         # Setup scheduled job
