@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from src.database.connection import get_db_connection
+from src.database.connection import db_pool
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, 
@@ -115,26 +115,24 @@ class TelegramBot:
             
             # Get database stats
             try:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                
-                # Get total posts
-                cursor.execute("SELECT COUNT(*) FROM parsed_posts")
-                stats["total_posts"] = cursor.fetchone()[0]
-                
-                # Get published posts count
-                cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
-                stats["published_posts"] = cursor.fetchone()[0]
-                
-                # Get posts in last 24h
-                cursor.execute("""
-                    SELECT COUNT(*) FROM parsed_posts 
-                    WHERE published = 1 
-                    AND published_at >= datetime('now', '-1 day')
-                """)
-                stats["posts_last_24h"] = cursor.fetchone()[0]
-                
-                conn.close()
+                with db_pool.get_connection() as conn:
+                    cursor = conn.cursor()
+                    
+                    # Get total posts
+                    cursor.execute("SELECT COUNT(*) FROM parsed_posts")
+                    stats["total_posts"] = cursor.fetchone()[0]
+                    
+                    # Get published posts count
+                    cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                    stats["published_posts"] = cursor.fetchone()[0]
+                    
+                    # Get posts in last 24h
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM parsed_posts 
+                        WHERE published = 1 
+                        AND published_at >= datetime('now', '-1 day')
+                    """)
+                    stats["posts_last_24h"] = cursor.fetchone()[0]
             except Exception as e:
                 logger.error(f"Error getting database stats: {str(e)}")
             
@@ -420,46 +418,36 @@ class TelegramBot:
         """Get the last 10 posts from the database.
         
         Returns:
-            List[Dict[str, Any]]: List of the last 10 posts
+            List[Dict[str, Any]]: List of posts with their details
         """
         try:
             logger.info("Fetching last 10 posts from database")
             
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Get the last 10 published posts
-            cursor.execute("""
-                SELECT post_url, title, image_path, published_at, description
+            cursor = db_pool.execute(
+                """
+                SELECT post_url, title, image_url, description, parsed_at 
                 FROM parsed_posts 
                 WHERE published = 1
-                ORDER BY published_at DESC
-                LIMIT 10
-            """)
+                ORDER BY parsed_at DESC LIMIT 10
+                """
+            )
             
             posts = []
             for row in cursor.fetchall():
-                post_url, title, image_path, published_at, description = row
-                
-                # Get full image path
-                image_url = None
-                if image_path and os.path.exists(image_path):
-                    image_url = image_path
-                
                 posts.append({
-                    'post_url': post_url,
-                    'title': title,
-                    'image_url': image_url,
-                    'published_at': published_at,
-                    'description': description
+                    'post_url': row[0],
+                    'title': row[1],
+                    'image_url': row[2],
+                    'description': row[3],
+                    'parsed_at': row[4],
+                    'is_published': True
                 })
             
-            conn.close()
-            logger.info(f"Found {len(posts)} posts")
+            logger.info(f"Found {len(posts)} posts in database")
             return posts
-        
+            
         except Exception as e:
-            logger.error(f"Error getting last 10 posts: {str(e)}")
+            logger.error(f"Error fetching last 10 posts: {str(e)}")
             return []
 
     async def send_last_10_posts(self) -> bool:
