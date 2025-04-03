@@ -16,6 +16,7 @@ from src.bot.telegram_bot import TelegramBot
 from src.database.models import storage
 from src.database.connection import db_pool
 from src.utils.monitor import get_system_stats
+from src.utils.validate import run_validation, display_validation_results
 
 # Configure logging
 logging.basicConfig(
@@ -397,6 +398,13 @@ async def main():
         from src.api.stats import run_api_server
         logger.info(f"Starting API server on {args.api_host}:{args.api_port}")
         run_api_server(host=args.api_host, port=args.api_port)
+        return
+    
+    # Process validate command
+    if args.validate:
+        logger.info("Running validation checks...")
+        validation_results = run_validation()
+        display_validation_results(validation_results)
         return
     
     # Initialize Telegram bot if credentials are available
