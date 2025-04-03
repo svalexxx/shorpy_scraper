@@ -16,7 +16,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from src.database.models import get_db_connection, storage
+from src.database.models import storage
+from src.database.connection import db_pool
 
 # Configure logging
 logging.basicConfig(

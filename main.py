@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 
 from src.scraper.shorpy import ShorpyScraper
 from src.bot.telegram_bot import TelegramBot
-from src.database.models import get_db_connection, storage
+from src.database.models import storage
+from src.database.connection import db_pool
 from src.utils.monitor import get_system_stats
 
 # Configure logging

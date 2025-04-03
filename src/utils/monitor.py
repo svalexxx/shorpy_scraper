@@ -10,10 +10,16 @@ import asyncio
 import logging
 import argparse
 import sqlite3
+import glob
+import tempfile
+import time
+import json
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
-from src.database.models import storage, get_db_connection
+from typing import Dict, Any, List, Optional, Tuple
+from src.database.models import storage
+from src.database.connection import db_pool
 from src.bot.telegram_bot import TelegramBot
+from src.utils.metrics import metrics
 
 # Configure logging
 logging.basicConfig(
@@ -27,58 +33,104 @@ logging.basicConfig(
 logger = logging.getLogger("monitor")
 
 async def get_system_stats() -> Dict[str, Any]:
-    """
-    Collect system statistics and performance data
-    """
-    stats = {}
+    """Get system statistics including database and filesystem usage."""
+    stats = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "disk_usage": {},
+        "db_stats": {},
+        "metrics": {},
+    }
     
-    # Database stats
+    # Get database stats
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Total posts
-        cursor.execute("SELECT COUNT(*) FROM parsed_posts")
-        stats["total_posts"] = cursor.fetchone()[0]
-        
-        # Published posts
-        cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
-        stats["published_posts"] = cursor.fetchone()[0]
-        
-        # Posts in last 24 hours
-        cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')")
-        stats["posts_last_24h"] = cursor.fetchone()[0]
-        
-        # Latest post time
-        cursor.execute("SELECT MAX(parsed_at) FROM parsed_posts")
-        latest_time = cursor.fetchone()[0]
-        stats["latest_post_time"] = latest_time
-        
-        # Check if we've processed any posts recently
-        if latest_time:
-            latest_dt = datetime.fromisoformat(latest_time.replace(' ', 'T'))
-            time_since_last = datetime.now() - latest_dt
-            stats["hours_since_last_post"] = round(time_since_last.total_seconds() / 3600, 1)
+        with db_pool.get_connection() as conn:
+            cursor = conn.cursor()
             
-            # Warning flag if no posts in over 48 hours
-            stats["stalled"] = time_since_last > timedelta(hours=48)
-        
+            # Get total posts
+            cursor.execute("SELECT COUNT(*) FROM parsed_posts")
+            stats["total_posts"] = cursor.fetchone()[0]
+            
+            # Get published posts
+            cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+            stats["published_posts"] = cursor.fetchone()[0]
+            
+            # Get posts in the last 24 hours
+            cursor.execute(
+                "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
+            )
+            stats["posts_last_24h"] = cursor.fetchone()[0]
+            
+            # Check if last processed post is stale (no new posts in 48 hours)
+            last_processed = storage.get_checkpoint("last_processed_time")
+            if last_processed:
+                try:
+                    last_dt = datetime.fromisoformat(last_processed)
+                    hours_since = (datetime.now() - last_dt).total_seconds() / 3600
+                    stats["hours_since_last_post"] = round(hours_since, 1)
+                    stats["stalled"] = hours_since > 48  # Stalled if no posts for 48 hours
+                except Exception as e:
+                    logger.error(f"Error parsing last processed time: {str(e)}")
     except Exception as e:
         logger.error(f"Error getting database stats: {str(e)}")
         stats["db_error"] = str(e)
+        
+    # Get database file size
+    if os.path.exists("shorpy_data.db"):
+        size_mb = os.path.getsize("shorpy_data.db") / (1024 * 1024)
+        stats["disk_usage"]["db_size_mb"] = round(size_mb, 2)
     
-    # System info
-    stats["disk_usage"] = get_disk_usage()
+    # Get scraped posts size
+    scraped_dir = "scraped_posts"
+    if os.path.exists(scraped_dir):
+        total_size = 0
+        file_count = 0
+        for root, dirs, files in os.walk(scraped_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                total_size += os.path.getsize(file_path)
+                file_count += 1
+        
+        stats["disk_usage"]["scraped_posts_size_mb"] = round(total_size / (1024 * 1024), 2)
+        stats["disk_usage"]["scraped_posts_count"] = file_count
     
-    # Get last checkpoint info
-    stats["last_run"] = storage.get_checkpoint("last_processed_time", "Never")
-    stats["last_post_title"] = storage.get_checkpoint("last_post_title", "None")
+    # Get temporary files info
+    temp_dir = "temp_images"
+    if os.path.exists(temp_dir):
+        temp_files = glob.glob(f"{temp_dir}/*")
+        stats["disk_usage"]["temp_files"] = len(temp_files)
+        
+        if temp_files:
+            # Check for orphaned temp files (older than 24 hours)
+            now = time.time()
+            orphaned = 0
+            for temp_file in temp_files:
+                if os.path.isfile(temp_file):
+                    mtime = os.path.getmtime(temp_file)
+                    if now - mtime > 24 * 3600:  # 24 hours
+                        orphaned += 1
+            
+            stats["disk_usage"]["orphaned_temp_files"] = orphaned > 0
+            stats["disk_usage"]["orphaned_temp_file_count"] = orphaned
     
-    # Check for potential errors
-    log_errors = get_recent_errors()
-    stats["error_count"] = len(log_errors)
-    if log_errors:
-        stats["recent_errors"] = log_errors[:5]  # Only include the 5 most recent errors
+    # Get recent errors from log
+    try:
+        recent_errors = []
+        log_file = "shorpy.log"
+        if os.path.exists(log_file):
+            with open(log_file, "r") as f:
+                lines = f.readlines()
+                # Look for ERROR lines in the last 100 lines
+                for line in lines[-100:]:
+                    if "ERROR" in line:
+                        recent_errors.append(line.strip())
+            
+            stats["error_count"] = len(recent_errors)
+            stats["recent_errors"] = recent_errors[-5:]  # Last 5 errors
+    except Exception as e:
+        logger.error(f"Error reading log file: {str(e)}")
+    
+    # Get metrics
+    stats["metrics"] = metrics.get_all_metrics()
     
     return stats
 
