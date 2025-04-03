@@ -366,6 +366,8 @@ def parse_args():
     parser.add_argument('--api-host', type=str, default='0.0.0.0', help='Host for the API server')
     parser.add_argument('--purge', action='store_true', help='Purge all database entries')
     parser.add_argument('--checkpoint', action='store_true', help='Show checkpoint information')
+    parser.add_argument('--test-posts', type=int, help='Process a specific number of posts for testing')
+    parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
     return parser.parse_args()
 
 async def main():
