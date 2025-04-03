@@ -130,7 +130,7 @@ class TelegramBot:
                     cursor.execute("""
                         SELECT COUNT(*) FROM parsed_posts 
                         WHERE published = 1 
-                        AND published_at >= datetime('now', '-1 day')
+                        AND parsed_at >= datetime('now', '-1 day')
                     """)
                     stats["posts_last_24h"] = cursor.fetchone()[0]
             except Exception as e:

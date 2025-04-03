@@ -364,6 +364,7 @@ def parse_args():
     parser.add_argument('--api-server', action='store_true', help='Run the monitoring API server')
     parser.add_argument('--api-port', type=int, default=5000, help='Port for the API server')
     parser.add_argument('--api-host', type=str, default='0.0.0.0', help='Host for the API server')
+    parser.add_argument('--purge', action='store_true', help='Purge all database entries')
     return parser.parse_args()
 
 async def main():
