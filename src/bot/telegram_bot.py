@@ -9,7 +9,7 @@ import requests
 import tempfile
 import uuid
 from typing import Dict, Any, Optional, List, Union, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from src.database.connection import db_pool
@@ -86,18 +86,18 @@ class TelegramBot:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
-    async def send_no_posts_message(self, send_detailed_report=False, send_notification=True) -> bool:
-        """Send a message when no new posts are found.
+    async def send_no_posts_message(self, send_detailed_report=False, send_notification=True):
+        """Send a message indicating that no new posts were found.
         
         Args:
-            send_detailed_report: Whether to send a detailed report in addition to the notification
+            send_detailed_report: Whether to send a detailed report to the report channel
             send_notification: Whether to send a notification to the main channel
-        
+            
         Returns:
-            bool: True if message was sent successfully, False otherwise
+            bool: True if the message was sent successfully, False otherwise
         """
         try:
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Send to main channel if requested
             if send_notification:
@@ -115,60 +115,58 @@ class TelegramBot:
                 # Send detailed report to report channel
                 stats = {
                     "start_time": now,
+                    "end_time": now,
+                    "duration": "0:00:01",
                     "total_posts_found": 0,
                     "posts_processed": 0,
                     "posts_sent": 0,
-                    "warnings": ["No new posts found during this check"],
-                    "disk_usage": {
-                        "db_size_mb": 0,
-                        "scraped_posts_size_mb": 0,
-                        "scraped_posts_file_count": 0
-                    }
+                    "warnings": ["No new posts found during this check"]
                 }
                 
                 # Get database stats
                 try:
-                    with db_pool.get_connection() as conn:
-                        cursor = conn.cursor()
-                        
-                        # Get total posts
-                        cursor.execute("SELECT COUNT(*) FROM parsed_posts")
-                        stats["total_posts"] = cursor.fetchone()[0]
-                        
-                        # Get published posts count
-                        cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
-                        stats["published_posts"] = cursor.fetchone()[0]
-                        
-                        # Get posts in last 24h
-                        cursor.execute("""
-                            SELECT COUNT(*) FROM parsed_posts 
-                            WHERE published = 1 
-                            AND parsed_at >= datetime('now', '-1 day')
-                        """)
-                        stats["posts_last_24h"] = cursor.fetchone()[0]
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
+                    stats["total_posts"] = cursor.fetchone()[0]
+                    
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
+                    stats["published_posts"] = cursor.fetchone()[0]
+                    
+                    # Get posts from last 24 hours
+                    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
+                    stats["posts_last_24h"] = cursor.fetchone()[0]
                 except Exception as e:
                     self.logger.error(f"Error getting database stats: {str(e)}")
                 
                 # Get disk usage
                 try:
-                    if os.path.exists("shorpy_data.db"):
-                        stats["disk_usage"]["db_size_mb"] = round(os.path.getsize("shorpy_data.db") / (1024 * 1024), 2)
+                    stats["disk_usage"] = {}
                     
-                    if os.path.exists("scraped_posts"):
-                        total_size = 0
+                    # Database size
+                    db_path = os.path.join(os.getcwd(), "shorpy.db")
+                    if os.path.exists(db_path):
+                        db_size = os.path.getsize(db_path) / (1024 * 1024)  # Convert to MB
+                        stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
+                    
+                    # Scraped posts size
+                    posts_dir = os.path.join(os.getcwd(), "scraped_posts")
+                    if os.path.exists(posts_dir):
+                        size = 0
                         file_count = 0
-                        for dirpath, dirnames, filenames in os.walk("scraped_posts"):
-                            for f in filenames:
-                                fp = os.path.join(dirpath, f)
-                                total_size += os.path.getsize(fp)
+                        for path, dirs, files in os.walk(posts_dir):
+                            for f in files:
+                                fp = os.path.join(path, f)
+                                size += os.path.getsize(fp)
                                 file_count += 1
-                        stats["disk_usage"]["scraped_posts_size_mb"] = round(total_size / (1024 * 1024), 2)
+                        
+                        size_mb = size / (1024 * 1024)  # Convert to MB
+                        stats["disk_usage"]["scraped_posts_size_mb"] = round(size_mb, 2)
                         stats["disk_usage"]["scraped_posts_file_count"] = file_count
                 except Exception as e:
                     self.logger.error(f"Error getting disk usage: {str(e)}")
                 
                 await self.send_status_report(stats)
-                
+            
             if send_notification or send_detailed_report:
                 self.logger.info("No posts message and/or report sent successfully")
                 return True
@@ -343,8 +341,8 @@ class TelegramBot:
                 
                 self.logger.info(f"Sending report to specific recipient: {chat_id}")
             
-            # Send message
-            await self.bot.send_message(chat_id=chat_id, text=message, parse_mode='HTML')
+            # Send message as plain text
+            await self.bot.send_message(chat_id=chat_id, text=message)
             self.logger.info(f"Status report sent successfully to {chat_id}")
             return True
         except Exception as e:
@@ -470,15 +468,15 @@ class TelegramBot:
             str: Formatted message text
         """
         # Build the message
-        message = f"📊 <b>Shorpy Scraper Status Report</b>\n\n"
+        message = f"📊 Shorpy Scraper Status Report\n\n"
         
         # Add environment indicator
         env_type = "Production" if str(self.channel_id).startswith("-100") else "Development"
-        message += f"<b>Environment:</b> {env_type}\n\n"
+        message += f"Environment: {env_type}\n\n"
         
         # Run stats section
         if "start_time" in stats:
-            message += f"<b>Run Information:</b>\n"
+            message += f"Run Information:\n"
             message += f"• Start time: {stats['start_time']}\n"
             if "end_time" in stats:
                 message += f"• End time: {stats['end_time']}\n"
@@ -487,28 +485,28 @@ class TelegramBot:
             message += "\n"
         
         # Posts section
-        message += f"<b>Posts:</b>\n"
+        message += f"Posts:\n"
         if "total_posts_found" in stats:
             message += f"• Total posts found: {stats['total_posts_found']}\n"
-        if "filtered_posts" in stats:
-            message += f"• Already published posts: {stats['filtered_posts']}\n"
         if "posts_processed" in stats:
             message += f"• Posts processed: {stats['posts_processed']}\n"
         if "posts_sent" in stats:
             message += f"• Posts sent to Telegram: {stats['posts_sent']}\n"
+        message += "\n"
         
         # Database stats
         if "total_posts" in stats:
-            message += f"\n<b>Database:</b>\n"
+            message += f"Database:\n"
             message += f"• Total posts: {stats['total_posts']}\n"
             if "published_posts" in stats:
                 message += f"• Published posts: {stats['published_posts']}\n"
             if "posts_last_24h" in stats:
                 message += f"• Posts in last 24h: {stats['posts_last_24h']}\n"
+            message += "\n"
         
         # System information
         if "disk_usage" in stats:
-            message += f"\n<b>System:</b>\n"
+            message += f"System:\n"
             disk = stats["disk_usage"]
             if "db_size_mb" in disk:
                 message += f"• Database size: {disk['db_size_mb']} MB\n"
@@ -516,24 +514,26 @@ class TelegramBot:
                 message += f"• Scraped posts: {disk['scraped_posts_size_mb']} MB\n"
             if "scraped_posts_file_count" in disk:
                 message += f"• Saved files: {disk['scraped_posts_file_count']}\n"
+            message += "\n"
+        
+        # Warning information - added before error information to match format        
+        if "warnings" in stats and stats["warnings"]:
+            message += f"⚠️ Warnings:\n"
+            for warning in stats["warnings"]:
+                message += f"• {warning}\n"
+            message += "\n"
         
         # Error information
         if "errors" in stats and stats["errors"] > 0:
-            message += f"\n<b>⚠️ Errors:</b> {stats['errors']}\n"
-            if "recent_errors" in stats:
-                message += "Most recent errors:\n"
+            message += f"⚠️ Errors: {stats['errors']}\n"
+            if "recent_errors" in stats and stats["recent_errors"]:
                 for i, error in enumerate(stats["recent_errors"][:3], 1):
                     short_error = error[-100:] if len(error) > 100 else error
-                    message += f"  {i}. {short_error}\n"
+                    message += f"• {short_error}\n"
+                message += "\n"
         
-        # Warning information        
-        if "warnings" in stats and stats["warnings"]:
-            message += f"\n<b>⚠️ Warnings:</b>\n"
-            for warning in stats["warnings"]:
-                message += f"• {warning}\n"
-        
-        # Add timestamp
-        message += f"\nReport time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        # Add timestamp without HTML tags
+        message += f"Report time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
 
