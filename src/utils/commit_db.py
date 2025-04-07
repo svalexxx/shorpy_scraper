@@ -22,9 +22,44 @@ logger = logging.getLogger(__name__)
 
 from src.database.connection import db_pool
 
+def check_for_db_changes():
+    """Check if there are any changes to the database file."""
+    try:
+        # Check if the database file is tracked by git
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "shorpy_data.db"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        # If the file is not tracked yet, it should be added
+        if result.returncode != 0:
+            logger.info("Database file is not tracked yet, will add it")
+            return True
+        
+        # Check if there are changes to the database file
+        diff_result = subprocess.run(
+            ["git", "diff", "--quiet", "shorpy_data.db"],
+            capture_output=True,
+            check=False
+        )
+        
+        # Return True if there are changes (non-zero exit code)
+        return diff_result.returncode != 0
+    except Exception as e:
+        logger.error(f"Error checking for database changes: {str(e)}")
+        # On error, assume there are changes
+        return True
+
 def commit_to_git():
     """Commit the database to Git and push to remote."""
     try:
+        # Check if there are changes to commit
+        if not check_for_db_changes():
+            logger.info("No changes to the database file, skipping commit")
+            return True
+        
         # Stage the database file
         db_filename = "shorpy_data.db"
         subprocess.run(["git", "add", db_filename], check=True)
@@ -60,6 +95,7 @@ def main():
     success = commit_to_git()
     if success:
         logger.info("Database successfully committed and pushed")
+        sys.exit(0)
     else:
         logger.error("Failed to commit database")
         sys.exit(1)
