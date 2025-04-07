@@ -31,7 +31,7 @@ TEMP_DIR = "temp_images"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-async def test_telegram_connection(silent=False):
+async def test_telegram_connection(silent=True):
     """Test if the bot can connect to Telegram and send a message."""
     try:
         bot = TelegramBot()
@@ -66,6 +66,17 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         "errors": 0
     }
     
+    # Initialize Telegram bot if needed
+    bot = None
+    if use_telegram:
+        try:
+            bot = TelegramBot()
+            print("Telegram bot initialized successfully.")
+        except Exception as e:
+            print(f"Could not initialize Telegram bot: {str(e)}")
+            use_telegram = False
+            stats["errors"] += 1
+    
     try:
         # Get posts to process
         posts = posts_to_process if posts_to_process is not None else scraper.get_latest_posts()
@@ -73,20 +84,21 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         if not posts:
             print("No posts to process.")
             # If Telegram is enabled and this is not a test run (real scheduled run)
-            if use_telegram and posts_to_process is None:
+            if use_telegram and posts_to_process is None and bot:
                 try:
-                    bot = TelegramBot()
-                    await bot.send_no_posts_message()
+                    # Send no posts message with detailed report only if requested
+                    send_report = (report_to is not None)
+                    await bot.send_no_posts_message(send_detailed_report=send_report)
                 except Exception as e:
                     print(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
                     
-            # Send the report
+            # Send the report to a specific recipient if requested
             stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
-            if report_to:
+            if report_to and bot:
                 await send_run_report(stats, report_to)
-            return
+            return bot
             
         print(f"Found {len(posts)} posts to process.")
         stats["total_posts_found"] = len(posts)
@@ -102,31 +114,21 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             if not posts:
                 print("No new posts to send to Telegram.")
                 # If Telegram is enabled, send a message that no new posts were found
-                if use_telegram:
+                if use_telegram and bot:
                     try:
-                        bot = TelegramBot()
-                        await bot.send_no_posts_message()
+                        # Send no posts message with detailed report only if requested
+                        send_report = (report_to is not None)
+                        await bot.send_no_posts_message(send_detailed_report=send_report)
                     except Exception as e:
                         print(f"Error sending 'no posts' message: {str(e)}")
                         stats["errors"] += 1
                 
-                # Send the report
+                # Send the report to a specific recipient if requested
                 stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
-                if report_to:
+                if report_to and bot:
                     await send_run_report(stats, report_to)
-                return
-        
-        # Initialize Telegram bot if needed
-        bot = None
-        if use_telegram:
-            try:
-                bot = TelegramBot()
-                print("Telegram bot initialized successfully.")
-            except Exception as e:
-                print(f"Could not initialize Telegram bot: {str(e)}")
-                use_telegram = False
-                stats["errors"] += 1
+                return bot
                 
         # Process each post
         for post in posts:
@@ -177,8 +179,10 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
     # Send the run report after every run
     stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
-    if report_to:
+    if report_to and bot:
         await send_run_report(stats, report_to)
+    
+    return bot
 
 def save_post_locally(post):
     """Save the post as an HTML file in the output directory."""
@@ -273,21 +277,18 @@ def job():
 async def run_setup(use_telegram=True, silent=False, report_to=None):
     """
     Run setup and verification steps
+    
+    Returns:
+        The initialized TelegramBot instance or None if Telegram is disabled
     """
     try:
-        # Test Telegram connection if enabled
-        if use_telegram:
-            telegram_success = await test_telegram_connection(silent)
-            if not telegram_success:
-                print("Could not connect to Telegram. Make sure your bot token and channel ID are correct.")
-                print("Will continue without Telegram integration.")
-                use_telegram = False
-        
-        # Process posts from the website
-        await process_posts(use_telegram=use_telegram, report_to=report_to)
+        # Process posts from the website and get the bot instance
+        bot = await process_posts(use_telegram=use_telegram, report_to=report_to)
+        return bot
     
     except Exception as e:
         print(f"Error in run_setup: {str(e)}")
+        return None
 
 def print_checkpoint_info():
     """Print information about the last processed post."""

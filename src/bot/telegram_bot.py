@@ -83,8 +83,11 @@ class TelegramBot:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
-    async def send_no_posts_message(self) -> bool:
+    async def send_no_posts_message(self, send_detailed_report=False) -> bool:
         """Send a message when no new posts are found.
+        
+        Args:
+            send_detailed_report: Whether to send a detailed report in addition to the notification
         
         Returns:
             bool: True if message was sent successfully, False otherwise
@@ -99,67 +102,69 @@ class TelegramBot:
                 text=f"📝 No new posts found at {now}.\nWill check again on the next run."
             )
             
-            # Send detailed report to report channel
-            stats = {
-                "start_time": now,
-                "total_posts_found": 0,
-                "posts_processed": 0,
-                "posts_sent": 0,
-                "warnings": ["No new posts found during this check"],
-                "disk_usage": {
-                    "db_size_mb": 0,
-                    "scraped_posts_size_mb": 0,
-                    "scraped_posts_file_count": 0
+            # Send detailed report only if requested
+            if send_detailed_report:
+                # Send detailed report to report channel
+                stats = {
+                    "start_time": now,
+                    "total_posts_found": 0,
+                    "posts_processed": 0,
+                    "posts_sent": 0,
+                    "warnings": ["No new posts found during this check"],
+                    "disk_usage": {
+                        "db_size_mb": 0,
+                        "scraped_posts_size_mb": 0,
+                        "scraped_posts_file_count": 0
+                    }
                 }
-            }
-            
-            # Get database stats
-            try:
-                with db_pool.get_connection() as conn:
-                    cursor = conn.cursor()
-                    
-                    # Get total posts
-                    cursor.execute("SELECT COUNT(*) FROM parsed_posts")
-                    stats["total_posts"] = cursor.fetchone()[0]
-                    
-                    # Get published posts count
-                    cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
-                    stats["published_posts"] = cursor.fetchone()[0]
-                    
-                    # Get posts in last 24h
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM parsed_posts 
-                        WHERE published = 1 
-                        AND parsed_at >= datetime('now', '-1 day')
-                    """)
-                    stats["posts_last_24h"] = cursor.fetchone()[0]
-            except Exception as e:
-                logger.error(f"Error getting database stats: {str(e)}")
-            
-            # Get disk usage
-            try:
-                if os.path.exists("shorpy_data.db"):
-                    stats["disk_usage"]["db_size_mb"] = round(os.path.getsize("shorpy_data.db") / (1024 * 1024), 2)
                 
-                if os.path.exists("scraped_posts"):
-                    total_size = 0
-                    file_count = 0
-                    for dirpath, dirnames, filenames in os.walk("scraped_posts"):
-                        for f in filenames:
-                            fp = os.path.join(dirpath, f)
-                            total_size += os.path.getsize(fp)
-                            file_count += 1
-                    stats["disk_usage"]["scraped_posts_size_mb"] = round(total_size / (1024 * 1024), 2)
-                    stats["disk_usage"]["scraped_posts_file_count"] = file_count
-            except Exception as e:
-                logger.error(f"Error getting disk usage: {str(e)}")
+                # Get database stats
+                try:
+                    with db_pool.get_connection() as conn:
+                        cursor = conn.cursor()
+                        
+                        # Get total posts
+                        cursor.execute("SELECT COUNT(*) FROM parsed_posts")
+                        stats["total_posts"] = cursor.fetchone()[0]
+                        
+                        # Get published posts count
+                        cursor.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                        stats["published_posts"] = cursor.fetchone()[0]
+                        
+                        # Get posts in last 24h
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM parsed_posts 
+                            WHERE published = 1 
+                            AND parsed_at >= datetime('now', '-1 day')
+                        """)
+                        stats["posts_last_24h"] = cursor.fetchone()[0]
+                except Exception as e:
+                    logger.error(f"Error getting database stats: {str(e)}")
+                
+                # Get disk usage
+                try:
+                    if os.path.exists("shorpy_data.db"):
+                        stats["disk_usage"]["db_size_mb"] = round(os.path.getsize("shorpy_data.db") / (1024 * 1024), 2)
+                    
+                    if os.path.exists("scraped_posts"):
+                        total_size = 0
+                        file_count = 0
+                        for dirpath, dirnames, filenames in os.walk("scraped_posts"):
+                            for f in filenames:
+                                fp = os.path.join(dirpath, f)
+                                total_size += os.path.getsize(fp)
+                                file_count += 1
+                        stats["disk_usage"]["scraped_posts_size_mb"] = round(total_size / (1024 * 1024), 2)
+                        stats["disk_usage"]["scraped_posts_file_count"] = file_count
+                except Exception as e:
+                    logger.error(f"Error getting disk usage: {str(e)}")
+                
+                await self.send_status_report(stats)
             
-            await self.send_status_report(stats)
-            
-            logger.info("'No new posts' notification and report sent successfully")
+            logger.info("'No new posts' notification sent successfully")
             return True
         except Exception as e:
-            logger.error(f"Error sending 'no new posts' message: {str(e)}")
+            logger.error(f"Error sending 'no posts' message: {str(e)}")
             return False
             
     async def download_image(self, image_url: str) -> Optional[str]:
