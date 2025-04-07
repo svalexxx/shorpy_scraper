@@ -67,6 +67,7 @@ pip install -r requirements.txt
      TELEGRAM_BOT_TOKEN=your_bot_token_here
      TELEGRAM_CHANNEL_ID=-1002647149349  # Your channel ID
      TELEGRAM_REPORT_CHANNEL_ID=29909617  # Your personal chat ID (for reports)
+     TELEGRAM_REPORT_RECIPIENT=@YourUsername  # For receiving detailed reports
      ```
 
 5. Create the database:
@@ -440,16 +441,37 @@ For convenience, a shell script is provided to run common operations:
 ./scripts/shorpy.sh [command]
 ```
 
-Commands:
-- `run`: Run the scraper once and exit
-- `run-silent`: Run the scraper in silent mode
-- `run-report`: Run the scraper once and send a report
-- `schedule`: Run on a 12-hour schedule
-- `docker-build`: Build the Docker image
-- `docker-run`: Run the scraper in a Docker container
-- `status`: Send a status report
-- ...and more
+### Report Recipients
 
-## License
+The script supports sending detailed reports about each run. These reports include:
+- Number of posts found and processed
+- Database statistics
+- System information
+- Any errors or warnings
 
-MIT 
+To receive these reports:
+
+1. First, get your Telegram chat ID:
+   ```bash
+   # Run the utility to get your chat ID
+   python src/utils/get_chat_id.py
+   ```
+   
+   Before running this utility:
+   - Start a chat with your bot in Telegram
+   - Send at least one message to the bot
+   - Then run the utility to see your chat ID
+   
+2. Set the `TELEGRAM_REPORT_RECIPIENT` environment variable in your `.env` file:
+   ```
+   TELEGRAM_REPORT_RECIPIENT=YOUR_CHAT_ID
+   ```
+   
+3. OR use the `--report-to` command-line parameter:
+   ```
+   python main.py --run-once --report-to YOUR_CHAT_ID
+   ```
+
+**Important Note**: You cannot send reports directly to other bots (including @tessssto_bot). You must use your personal Telegram account or a channel where your bot is an administrator.
+
+Reports are separate from the normal channel notifications and provide more detailed information.
