@@ -370,6 +370,7 @@ def parse_args():
     parser.add_argument('--checkpoint', action='store_true', help='Show checkpoint information')
     parser.add_argument('--test-posts', type=int, help='Process a specific number of posts for testing')
     parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
+    parser.add_argument('--report-to', type=str, help='Send run report to specified Telegram username or chat ID')
     return parser.parse_args()
 
 async def main():
@@ -408,10 +409,15 @@ async def main():
         display_validation_results(validation_results)
         return
     
+    # Get report recipient from command-line or environment variable
+    report_recipient = args.report_to or os.getenv('TELEGRAM_REPORT_RECIPIENT')
+    if report_recipient:
+        logger.info(f"Will send report to: {report_recipient}")
+    
     # Initialize Telegram bot if credentials are available
     bot = None
     try:
-        bot = await run_setup(args.silent)
+        bot = await run_setup(use_telegram=not args.check_only, silent=args.silent, report_to=report_recipient)
     except Exception as e:
         logger.error(f"Error setting up Telegram: {str(e)}")
         bot = None
@@ -437,23 +443,7 @@ async def main():
     if args.test_posts:
         num_posts = int(args.test_posts)
         logger.info(f"Test mode: Processing {num_posts} posts")
-        scraper = ShorpyScraper()
-        test_posts = scraper.get_test_posts(num_posts)
-        
-        logger.info(f"Found {len(test_posts)} test posts")
-        
-        for post in test_posts:
-            logger.info(f"Post: {post['title']}")
-            # Save locally
-            storage.save_post(post)
-            # Send to Telegram
-            if bot:
-                await bot.send_post(post)
-            
-            # Delete files if requested
-            if args.delete_files:
-                storage.delete_post_files(post)
-        
+        await process_test_posts(num_posts, args.delete_files, report_recipient)
         return
     
     # Send the last 10 posts if requested
@@ -467,22 +457,38 @@ async def main():
         return
     
     # Regular operation - process posts
-    scraper = ShorpyScraper()
+    if args.run_once:
+        # For run-once mode, directly process posts with proper report recipient
+        await process_posts(
+            use_telegram=not args.check_only, 
+            delete_after_processing=args.delete_files,
+            report_to=report_recipient
+        )
+        logger.info("Run-once mode enabled, exiting.")
+        return
     
     # Schedule mode
     if args.daemon:
         import schedule
         
         # Setup scheduled job
-        def job():
-            asyncio.run(process_posts(args, bot, scraper))
+        def scheduled_job():
+            asyncio.run(process_posts(
+                use_telegram=not args.check_only,
+                delete_after_processing=args.delete_files,
+                report_to=report_recipient
+            ))
         
         # Run job immediately
         logger.info("Running initial job...")
-        asyncio.run(process_posts(args, bot, scraper))
+        asyncio.run(process_posts(
+            use_telegram=not args.check_only,
+            delete_after_processing=args.delete_files,
+            report_to=report_recipient
+        ))
         
         # Schedule job to run every 12 hours
-        schedule.every(12).hours.do(job)
+        schedule.every(12).hours.do(scheduled_job)
         
         logger.info("Scheduled to run every 12 hours...")
         
@@ -493,20 +499,20 @@ async def main():
         except KeyboardInterrupt:
             logger.info("Shutting down...")
     
-    # Run once mode
+    # Default behavior - run once but don't exit
     else:
-        await process_posts(args, bot, scraper)
-        
-        if args.run_once:
-            logger.info("Run-once mode enabled, exiting.")
-        else:
-            logger.info("Waiting for next run.")
-            # Keep script running even in non-schedule mode
-            try:
-                while True:
-                    time.sleep(60)
-            except KeyboardInterrupt:
-                logger.info("Shutting down...")
+        await process_posts(
+            use_telegram=not args.check_only,
+            delete_after_processing=args.delete_files,
+            report_to=report_recipient
+        )
+        logger.info("Waiting for next run.")
+        # Keep script running even in non-schedule mode
+        try:
+            while True:
+                time.sleep(60)
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
     
     # Clean up temp files
     clean_temp_images()
