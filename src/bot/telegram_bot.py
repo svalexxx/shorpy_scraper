@@ -26,24 +26,27 @@ TEMP_DIR = "temp_images"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 class TelegramBot:
-    def __init__(self) -> None:
-        """Initialize the Telegram bot with credentials from environment variables."""
-        self.token = os.getenv('TELEGRAM_BOT_TOKEN')
-        self.channel_id = os.getenv('TELEGRAM_CHANNEL_ID')
-        self.report_channel_id = os.getenv('TELEGRAM_REPORT_CHANNEL_ID', self.channel_id)
+    def __init__(self, channel_id=None):
+        """Initialize the Telegram bot.
         
-        if not self.token:
-            logger.error("TELEGRAM_BOT_TOKEN not set in environment variables")
-            raise ValueError("TELEGRAM_BOT_TOKEN not set")
-            
+        Args:
+            channel_id: Optional override for the channel ID
+        """
+        self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.channel_id = channel_id or os.getenv("TELEGRAM_CHANNEL_ID")
+        self.report_channel_id = os.getenv("TELEGRAM_REPORT_CHANNEL_ID", self.channel_id)
+        self.logger = logging.getLogger(__name__)
+        
+        if not self.bot_token:
+            raise ValueError("Missing TELEGRAM_BOT_TOKEN environment variable")
         if not self.channel_id:
-            logger.error("TELEGRAM_CHANNEL_ID not set in environment variables")
-            raise ValueError("TELEGRAM_CHANNEL_ID not set")
+            raise ValueError("Missing TELEGRAM_CHANNEL_ID environment variable")
         
-        self.bot = Bot(token=self.token)
-        logger.info(f"Telegram bot initialized with channel ID: {self.channel_id}")
+        # Initialize the bot
+        self.bot = Bot(token=self.bot_token)
+        self.logger.info(f"Telegram bot initialized with channel ID: {self.channel_id}")
         if self.report_channel_id != self.channel_id:
-            logger.info(f"Reports will be sent to separate channel ID: {self.report_channel_id}")
+            self.logger.info(f"Reports will be sent to separate channel ID: {self.report_channel_id}")
         
     @retry(
         stop=stop_after_attempt(3),
@@ -61,21 +64,21 @@ class TelegramBot:
         """
         try:
             if silent:
-                logger.info("Testing Telegram connection in silent mode")
+                self.logger.info("Testing Telegram connection in silent mode")
                 # Just verify the bot info without sending a message
                 me = await self.bot.get_me()
-                logger.info(f"Connected to Telegram as {me.username}")
+                self.logger.info(f"Connected to Telegram as {me.username}")
                 return True
                 
-            logger.info("Testing Telegram connection by sending a test message")
+            self.logger.info("Testing Telegram connection by sending a test message")
             await self.bot.send_message(
                 chat_id=self.channel_id,
                 text=f"🔄 Connection test successful! (Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
             )
-            logger.info("Test message sent successfully")
+            self.logger.info("Test message sent successfully")
             return True
         except Exception as e:
-            logger.error(f"Error testing Telegram connection: {str(e)}")
+            self.logger.error(f"Error testing Telegram connection: {str(e)}")
             return False
             
     @retry(
@@ -98,17 +101,17 @@ class TelegramBot:
             
             # Send to main channel if requested
             if send_notification:
-                logger.info("Sending 'no new posts' notification to channel")
+                self.logger.info("Sending 'no new posts' notification to channel")
                 await self.bot.send_message(
                     chat_id=self.channel_id,
                     text=f"📝 No new posts found at {now}.\nWill check again on the next run."
                 )
             else:
-                logger.info("Skipping 'no new posts' notification to channel")
+                self.logger.info("Skipping 'no new posts' notification to channel")
             
             # Send detailed report only if requested
             if send_detailed_report:
-                logger.info("Sending detailed report to report channel")
+                self.logger.info("Sending detailed report to report channel")
                 # Send detailed report to report channel
                 stats = {
                     "start_time": now,
@@ -144,7 +147,7 @@ class TelegramBot:
                         """)
                         stats["posts_last_24h"] = cursor.fetchone()[0]
                 except Exception as e:
-                    logger.error(f"Error getting database stats: {str(e)}")
+                    self.logger.error(f"Error getting database stats: {str(e)}")
                 
                 # Get disk usage
                 try:
@@ -162,19 +165,19 @@ class TelegramBot:
                         stats["disk_usage"]["scraped_posts_size_mb"] = round(total_size / (1024 * 1024), 2)
                         stats["disk_usage"]["scraped_posts_file_count"] = file_count
                 except Exception as e:
-                    logger.error(f"Error getting disk usage: {str(e)}")
+                    self.logger.error(f"Error getting disk usage: {str(e)}")
                 
                 await self.send_status_report(stats)
                 
             if send_notification or send_detailed_report:
-                logger.info("No posts message and/or report sent successfully")
+                self.logger.info("No posts message and/or report sent successfully")
                 return True
             else:
-                logger.info("No messages were sent (both notification and report were disabled)")
+                self.logger.info("No messages were sent (both notification and report were disabled)")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error sending 'no posts' message: {str(e)}")
+            self.logger.error(f"Error sending 'no posts' message: {str(e)}")
             return False
             
     async def download_image(self, image_url: str) -> Optional[str]:
@@ -187,7 +190,7 @@ class TelegramBot:
             Optional[str]: Path to the downloaded image or None if failed
         """
         try:
-            logger.info(f"Downloading image from {image_url}")
+            self.logger.info(f"Downloading image from {image_url}")
             response = requests.get(image_url, stream=True, timeout=30)
             response.raise_for_status()
             
@@ -199,10 +202,10 @@ class TelegramBot:
                 temp_file.write(chunk)
                 
             temp_file.close()
-            logger.info(f"Image downloaded successfully to {temp_file.name}")
+            self.logger.info(f"Image downloaded successfully to {temp_file.name}")
             return temp_file.name
         except Exception as e:
-            logger.error(f"Error downloading image: {str(e)}")
+            self.logger.error(f"Error downloading image: {str(e)}")
             return None
             
     @retry(
@@ -231,7 +234,7 @@ class TelegramBot:
                 image_path = await self.download_image(post['image_url'])
                 
                 if image_path:
-                    logger.info(f"Sending post with image: {post['title']}")
+                    self.logger.info(f"Sending post with image: {post['title']}")
                     # Send the image with caption
                     with open(image_path, 'rb') as img_file:
                         await self.bot.send_photo(
@@ -244,15 +247,15 @@ class TelegramBot:
                     # Delete the temporary file
                     try:
                         os.unlink(image_path)
-                        logger.info(f"Deleted temporary file: {image_path}")
+                        self.logger.info(f"Deleted temporary file: {image_path}")
                     except Exception as e:
-                        logger.warning(f"Could not delete temporary file {image_path}: {str(e)}")
+                        self.logger.warning(f"Could not delete temporary file {image_path}: {str(e)}")
                         
-                    logger.info(f"Post sent successfully: {post['title']}")
+                    self.logger.info(f"Post sent successfully: {post['title']}")
                     return True
                 else:
                     # If image download failed, send just the text
-                    logger.warning(f"Image download failed, sending text only for: {post['title']}")
+                    self.logger.warning(f"Image download failed, sending text only for: {post['title']}")
                     await self.bot.send_message(
                         chat_id=self.channel_id,
                         text=f"{caption}\n\n(Image could not be downloaded)",
@@ -261,7 +264,7 @@ class TelegramBot:
                     return True
             else:
                 # No image URL, send just the text
-                logger.info(f"Sending post without image: {post['title']}")
+                self.logger.info(f"Sending post without image: {post['title']}")
                 await self.bot.send_message(
                     chat_id=self.channel_id,
                     text=caption,
@@ -270,11 +273,11 @@ class TelegramBot:
                 return True
                 
         except Exception as e:
-            logger.error(f"Error sending post to Telegram: {str(e)}")
+            self.logger.error(f"Error sending post to Telegram: {str(e)}")
             # Try one more time with just the text if sending with image failed
             try:
                 if 'image_url' in post and post['image_url']:
-                    logger.info("Retrying with text only")
+                    self.logger.info("Retrying with text only")
                     await self.bot.send_message(
                         chat_id=self.channel_id,
                         text=f"{caption}\n\n(Image could not be sent)",
@@ -282,7 +285,7 @@ class TelegramBot:
                     )
                     return True
             except Exception as retry_error:
-                logger.error(f"Error in retry attempt: {str(retry_error)}")
+                self.logger.error(f"Error in retry attempt: {str(retry_error)}")
                 
             return False
             
@@ -354,7 +357,7 @@ class TelegramBot:
             bool: True if message was sent successfully, False otherwise
         """
         try:
-            logger.info("Sending 'latest posts' button message")
+            self.logger.info("Sending 'latest posts' button message")
             
             # Create an inline keyboard with a button
             keyboard = [
@@ -369,10 +372,10 @@ class TelegramBot:
                 reply_markup=reply_markup
             )
             
-            logger.info("'Latest posts' button message sent successfully")
+            self.logger.info("'Latest posts' button message sent successfully")
             return True
         except Exception as e:
-            logger.error(f"Error sending 'latest posts' button message: {str(e)}")
+            self.logger.error(f"Error sending 'latest posts' button message: {str(e)}")
             return False
 
     async def get_last_10_posts(self) -> List[Dict[str, Any]]:
@@ -382,7 +385,7 @@ class TelegramBot:
             List[Dict[str, Any]]: List of posts with their details
         """
         try:
-            logger.info("Fetching last 10 posts from database")
+            self.logger.info("Fetching last 10 posts from database")
             
             cursor = db_pool.execute(
                 """
@@ -404,11 +407,11 @@ class TelegramBot:
                     'is_published': True
                 })
             
-            logger.info(f"Found {len(posts)} posts in database")
+            self.logger.info(f"Found {len(posts)} posts in database")
             return posts
             
         except Exception as e:
-            logger.error(f"Error fetching last 10 posts: {str(e)}")
+            self.logger.error(f"Error fetching last 10 posts: {str(e)}")
             return []
 
     async def send_last_10_posts(self) -> bool:
@@ -437,7 +440,7 @@ class TelegramBot:
             for post in posts:
                 success = await self.send_post(post)
                 if not success:
-                    logger.error(f"Failed to send post: {post['title']}")
+                    self.logger.error(f"Failed to send post: {post['title']}")
             
             # Send a final message
             await self.bot.send_message(
@@ -448,7 +451,7 @@ class TelegramBot:
             return True
         
         except Exception as e:
-            logger.error(f"Error sending last 10 posts: {str(e)}")
+            self.logger.error(f"Error sending last 10 posts: {str(e)}")
             return False
 
     def _format_status_report(self, stats):
