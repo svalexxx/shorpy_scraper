@@ -83,27 +83,32 @@ class TelegramBot:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
-    async def send_no_posts_message(self, send_detailed_report=False) -> bool:
+    async def send_no_posts_message(self, send_detailed_report=False, send_notification=True) -> bool:
         """Send a message when no new posts are found.
         
         Args:
             send_detailed_report: Whether to send a detailed report in addition to the notification
+            send_notification: Whether to send a notification to the main channel
         
         Returns:
             bool: True if message was sent successfully, False otherwise
         """
         try:
-            logger.info("Sending 'no new posts' notification")
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            # Send to main channel
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text=f"📝 No new posts found at {now}.\nWill check again on the next run."
-            )
+            # Send to main channel if requested
+            if send_notification:
+                logger.info("Sending 'no new posts' notification to channel")
+                await self.bot.send_message(
+                    chat_id=self.channel_id,
+                    text=f"📝 No new posts found at {now}.\nWill check again on the next run."
+                )
+            else:
+                logger.info("Skipping 'no new posts' notification to channel")
             
             # Send detailed report only if requested
             if send_detailed_report:
+                logger.info("Sending detailed report to report channel")
                 # Send detailed report to report channel
                 stats = {
                     "start_time": now,
@@ -160,9 +165,14 @@ class TelegramBot:
                     logger.error(f"Error getting disk usage: {str(e)}")
                 
                 await self.send_status_report(stats)
-            
-            logger.info("'No new posts' notification sent successfully")
-            return True
+                
+            if send_notification or send_detailed_report:
+                logger.info("No posts message and/or report sent successfully")
+                return True
+            else:
+                logger.info("No messages were sent (both notification and report were disabled)")
+                return False
+                
         except Exception as e:
             logger.error(f"Error sending 'no posts' message: {str(e)}")
             return False

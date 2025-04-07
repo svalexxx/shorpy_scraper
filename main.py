@@ -71,9 +71,9 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
     if use_telegram:
         try:
             bot = TelegramBot()
-            print("Telegram bot initialized successfully.")
+            logger.info("Telegram bot initialized successfully.")
         except Exception as e:
-            print(f"Could not initialize Telegram bot: {str(e)}")
+            logger.error(f"Could not initialize Telegram bot: {str(e)}")
             use_telegram = False
             stats["errors"] += 1
     
@@ -82,15 +82,15 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         posts = posts_to_process if posts_to_process is not None else scraper.get_latest_posts()
         
         if not posts:
-            print("No posts to process.")
+            logger.info("No posts to process.")
             # If Telegram is enabled and this is not a test run (real scheduled run)
             if use_telegram and posts_to_process is None and bot:
                 try:
                     # Send no posts message with detailed report only if requested
                     send_report = (report_to is not None)
-                    await bot.send_no_posts_message(send_detailed_report=send_report)
+                    await bot.send_no_posts_message(send_detailed_report=send_report, send_notification=True)
                 except Exception as e:
-                    print(f"Error sending 'no posts' message: {str(e)}")
+                    logger.error(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
                     
             # Send the report to a specific recipient if requested
@@ -100,30 +100,22 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                 await send_run_report(stats, report_to)
             return bot
             
-        print(f"Found {len(posts)} posts to process.")
+        logger.info(f"Found {len(posts)} posts to process.")
         stats["total_posts_found"] = len(posts)
         
         # Filter out posts that have already been published (unless in test mode)
         if posts_to_process is None:  # Not in test mode
             new_posts = [post for post in posts if not post.get('is_published', False)]
             if len(new_posts) != len(posts):
-                print(f"Filtered out {len(posts) - len(new_posts)} already published posts.")
+                logger.info(f"Filtered out {len(posts) - len(new_posts)} already published posts.")
                 stats["filtered_posts"] = len(posts) - len(new_posts)
                 posts = new_posts
                 
             if not posts:
-                print("No new posts to send to Telegram.")
-                # If Telegram is enabled, send a message that no new posts were found
-                if use_telegram and bot:
-                    try:
-                        # Send no posts message with detailed report only if requested
-                        send_report = (report_to is not None)
-                        await bot.send_no_posts_message(send_detailed_report=send_report)
-                    except Exception as e:
-                        print(f"Error sending 'no posts' message: {str(e)}")
-                        stats["errors"] += 1
+                logger.info("No new posts to send to Telegram.")
+                # No need to send a notification here, as we already sent one above if posts was empty
                 
-                # Send the report to a specific recipient if requested
+                # Just send the report to a specific recipient if requested
                 stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
                 if report_to and bot:
@@ -140,15 +132,15 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             telegram_success = False
             if use_telegram and bot:
                 try:
-                    print(f"Attempting to send post to Telegram: {post['title']}")
+                    logger.info(f"Attempting to send post to Telegram: {post['title']}")
                     telegram_success = await bot.send_post(post)
                     if telegram_success:
-                        print(f"Successfully sent post to Telegram: {post['title']}")
+                        logger.info(f"Successfully sent post to Telegram: {post['title']}")
                         stats["posts_sent"] += 1
                         # Mark as published
                         scraper.mark_as_published(post)
                 except Exception as e:
-                    print(f"Error sending to Telegram: {str(e)}")
+                    logger.error(f"Error sending to Telegram: {str(e)}")
                     stats["errors"] += 1
             
             # If we should delete after processing and the post was sent successfully
@@ -158,14 +150,14 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                     for file_path in post_files:
                         if os.path.exists(file_path):
                             os.remove(file_path)
-                            print(f"Deleted file after processing: {file_path}")
+                            logger.info(f"Deleted file after processing: {file_path}")
                 except Exception as e:
-                    print(f"Error deleting files: {str(e)}")
+                    logger.error(f"Error deleting files: {str(e)}")
                     stats["errors"] += 1
             
             # If either saved locally or sent to Telegram, mark as processed
             scraper.mark_as_parsed(post)
-            print(f"Successfully processed post: {post['title']}")
+            logger.info(f"Successfully processed post: {post['title']}")
             
             # Update the last processed post URL in checkpoint
             storage.set_checkpoint('last_post_url', post['post_url'])
@@ -173,7 +165,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             storage.set_checkpoint('last_processed_time', datetime.now().isoformat())
     
     except Exception as e:
-        print(f"Error processing posts: {str(e)}")
+        logger.error(f"Error processing posts: {str(e)}")
         stats["errors"] += 1
     
     # Send the run report after every run
