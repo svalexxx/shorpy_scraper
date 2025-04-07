@@ -45,15 +45,16 @@ async def send_run_report(stats, recipient_username=None):
     
     Args:
         stats: Dictionary containing run statistics
-        recipient_username: Optional username to send report to (e.g., @username)
+        recipient_username: Optional username or chat ID to send report to
     """
     try:
         bot = TelegramBot()
-        if recipient_username:
-            await bot.send_status_report(stats, recipient_username)
+        logger.info(f"Sending run report to {recipient_username or 'default channel'}")
+        success = await bot.send_status_report(stats, recipient_username)
+        if success:
+            logger.info(f"Run report sent successfully to {recipient_username or 'default channel'}")
         else:
-            await bot.send_status_report(stats)
-        logger.info(f"Run report sent to {recipient_username or 'default channel'}")
+            logger.error(f"Failed to send run report to {recipient_username or 'default channel'}")
     except Exception as e:
         logger.error(f"Error sending run report: {str(e)}")
 
@@ -88,17 +89,19 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                 try:
                     # First, send no posts message to the main channel
                     await bot.send_no_posts_message(send_detailed_report=False, send_notification=True)
-                    
-                    # Then, if a report recipient is specified, send a separate detailed report
-                    if report_to:
-                        logger.info(f"Sending detailed report to {report_to}")
-                        stats["total_posts_found"] = 0
-                        stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
-                        await send_run_report(stats, report_to)
                 except Exception as e:
                     logger.error(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
+            
+            # Always prepare stats for reports when no posts are found
+            stats["total_posts_found"] = 0
+            stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
+            
+            # Always send a report if a recipient is specified
+            if report_to and bot:
+                logger.info(f"Sending detailed report to {report_to}")
+                await send_run_report(stats, report_to)
             
             return bot
             
@@ -115,13 +118,16 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                 
             if not posts:
                 logger.info("No new posts to send to Telegram.")
-                # No need to send a notification here, as we already sent one above if posts was empty
                 
-                # Just send the report to a specific recipient if requested
+                # Always prepare stats for reports when no new posts are found
                 stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
+                
+                # Always send a report if a recipient is specified
                 if report_to and bot:
+                    logger.info(f"Sending detailed report to {report_to}")
                     await send_run_report(stats, report_to)
+                
                 return bot
                 
         # Process each post
@@ -355,120 +361,95 @@ async def process_test_posts(num_posts=2, delete_files=False, report_to=None):
         print(f"Error processing test posts: {str(e)}")
 
 def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Shorpy Scraper - fetch and post historic photos')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
-    parser.add_argument('--silent', '-s', action='store_true', help='Suppress console output')
-    parser.add_argument('--run-once', action='store_true', help='Run once and exit')
-    parser.add_argument('--daemon', action='store_true', help='Run as a daemon with scheduling')
-    parser.add_argument('--check-only', action='store_true', help='Check for new posts but don\'t post to Telegram')
-    parser.add_argument('--send-test', action='store_true', help='Send a test message to Telegram')
-    parser.add_argument('--last-10-posts', action='store_true', help='Send last 10 posts to Telegram')
-    parser.add_argument('--send-button', action='store_true', help='Send a button to Telegram channel to get last 10 posts')
-    parser.add_argument('--interactive', action='store_true', help='Enable interactive mode')
-    parser.add_argument('--create-index', action='store_true', help='Create an index.html file of all posts')
-    parser.add_argument('--validate', action='store_true', help='Validate your setup')
-    parser.add_argument('--install', action='store_true', help='Install the script')
-    parser.add_argument('--api-server', action='store_true', help='Run the monitoring API server')
-    parser.add_argument('--api-port', type=int, default=5000, help='Port for the API server')
-    parser.add_argument('--api-host', type=str, default='0.0.0.0', help='Host for the API server')
-    parser.add_argument('--purge', action='store_true', help='Purge all database entries')
-    parser.add_argument('--checkpoint', action='store_true', help='Show checkpoint information')
-    parser.add_argument('--test-posts', type=int, help='Process a specific number of posts for testing')
-    parser.add_argument('--delete-files', action='store_true', help='Delete files after processing')
-    parser.add_argument('--report-to', type=str, help='Send run report to specified Telegram username or chat ID')
-    return parser.parse_args()
+    """Parse command line arguments.
+    
+    Returns:
+        argparse.Namespace: Parsed command line arguments.
+    """
+    parser = argparse.ArgumentParser(description="Shorpy image scraper")
+    
+    # Basic mode flags
+    parser.add_argument("--run-once", action="store_true", help="Run once and exit")
+    parser.add_argument("--check-only", action="store_true", help="Check for new posts but don't send to Telegram")
+    
+    # Debug and testing options
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--silent", action="store_true", help="Suppress Telegram connection test message")
+    parser.add_argument("--delete-files", action="store_true", help="Delete post files after processing")
+    
+    # Action modifiers
+    parser.add_argument("--limit", type=int, help="Limit number of posts to process")
+    parser.add_argument("--retry", type=int, help="Retry failed posts from previous runs")
+    parser.add_argument("--force", action="store_true", help="Force processing of posts (ignore database)")
+    
+    # Special commands
+    parser.add_argument("--validate", action="store_true", help="Run system validation checks")
+    parser.add_argument("--repair-db", action="store_true", help="Attempt to repair the SQLite database")
+    parser.add_argument("--last-10-posts", action="store_true", help="Send the last 10 posts from the database")
+    parser.add_argument("--send-button", action="store_true", help="Send button to channel for last 10 posts")
+    parser.add_argument("--monitor", action="store_true", help="Start monitoring API server")
+    
+    # Configuration
+    parser.add_argument("--report-to", type=str, help="Send status report to a specific recipient")
+    
+    args = parser.parse_args()
+    
+    # Get default report recipient from environment (if not specified in command line)
+    args.report_recipient = args.report_to or os.getenv("TELEGRAM_REPORT_RECIPIENT")
+    
+    return args
 
 async def main():
-    """Main entry point for the script."""
+    """Main function."""
     
     # Parse command line arguments
     args = parse_args()
     
-    # Enable verbose logging if requested
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-        logger.debug("Verbose logging enabled")
-        logger.debug(f"Python version: {sys.version}")
-        logger.debug(f"Current working directory: {os.getcwd()}")
-        logger.debug(f"Environment variables: TELEGRAM_BOT_TOKEN: {'set' if os.getenv('TELEGRAM_BOT_TOKEN') else 'not set'}, TELEGRAM_CHANNEL_ID: {'set' if os.getenv('TELEGRAM_CHANNEL_ID') else 'not set'}")
-        logger.debug(f"Output directory: {OUTPUT_DIR}")
-        logger.debug(f"Temp directory: {TEMP_DIR}")
+    # Set up logging
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
     
-    # Check if interactive mode is requested
-    if args.interactive:
-        from src.bot.telegram_bot import run_bot
-        run_bot()
-        return
+    if args.report_recipient:
+        logger.info(f"Will send report to: {args.report_recipient}")
     
-    # Run API server if requested
-    if args.api_server:
-        from src.api.stats import run_api_server
-        logger.info(f"Starting API server on {args.api_host}:{args.api_port}")
-        run_api_server(host=args.api_host, port=args.api_port)
-        return
-    
-    # Process validate command
+    # Initialize the bot with proper settings
     if args.validate:
-        logger.info("Running validation checks...")
-        validation_results = run_validation()
-        display_validation_results(validation_results)
+        # Run validation routine
+        success = await validate_system()
         return
-    
-    # Get report recipient from command-line or environment variable
-    report_recipient = args.report_to or os.getenv('TELEGRAM_REPORT_RECIPIENT')
-    if report_recipient:
-        logger.info(f"Will send report to: {report_recipient}")
-    
+
     # Initialize Telegram bot if credentials are available
     bot = None
     try:
-        bot = await run_setup(use_telegram=not args.check_only, silent=args.silent, report_to=report_recipient)
+        bot = await run_setup(use_telegram=not args.check_only, silent=args.silent)
     except Exception as e:
         logger.error(f"Error setting up Telegram: {str(e)}")
         bot = None
-    
-    # Process special commands
-    if args.purge:
-        logger.info("Purging all database entries")
-        storage.purge_database()
-        return
-    
-    if args.checkpoint:
-        last_post = storage.get_checkpoint("last_post_url")
-        title = storage.get_checkpoint("last_post_title")
-        timestamp = storage.get_checkpoint("last_processed")
         
-        logger.info("\nCheckpoint Information:")
-        logger.info(f"Last processed post: {title}")
-        logger.info(f"URL: {last_post}")
-        logger.info(f"Processed at: {timestamp}")
-        logger.info(f"Total posts processed: {storage.count_parsed_posts()}")
-        return
-    
-    if args.test_posts:
-        num_posts = int(args.test_posts)
-        logger.info(f"Test mode: Processing {num_posts} posts")
-        await process_test_posts(num_posts, args.delete_files, report_recipient)
-        return
-    
-    # Send the last 10 posts if requested
+    # Feature: Send last 10 posts
     if args.last_10_posts and bot:
         await bot.send_last_10_posts()
+        logger.info("Last 10 posts sent to Telegram channel")
         return
-    
-    # Send a button to show the last 10 posts if requested
+        
+    # Feature: Send button for last 10 posts
     if args.send_button and bot:
         await bot.send_latest_posts_button()
+        logger.info("Button for last 10 posts sent to Telegram channel")
         return
-    
+
     # Regular operation - process posts
     if args.run_once:
         # For run-once mode, directly process posts with proper report recipient
         await process_posts(
             use_telegram=not args.check_only, 
             delete_after_processing=args.delete_files,
-            report_to=report_recipient
+            report_to=args.report_recipient  # Use the combined report recipient
         )
         logger.info("Run-once mode enabled, exiting.")
         return
@@ -482,7 +463,7 @@ async def main():
             asyncio.run(process_posts(
                 use_telegram=not args.check_only,
                 delete_after_processing=args.delete_files,
-                report_to=report_recipient
+                report_to=args.report_recipient
             ))
         
         # Run job immediately
@@ -490,7 +471,7 @@ async def main():
         asyncio.run(process_posts(
             use_telegram=not args.check_only,
             delete_after_processing=args.delete_files,
-            report_to=report_recipient
+            report_to=args.report_recipient
         ))
         
         # Schedule job to run every 12 hours
@@ -510,7 +491,7 @@ async def main():
         await process_posts(
             use_telegram=not args.check_only,
             delete_after_processing=args.delete_files,
-            report_to=report_recipient
+            report_to=args.report_recipient
         )
         logger.info("Waiting for next run.")
         # Keep script running even in non-schedule mode

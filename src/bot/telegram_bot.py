@@ -291,110 +291,56 @@ class TelegramBot:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
-    async def send_status_report(self, stats: Dict[str, Any], recipient: Optional[str] = None) -> bool:
-        """Send a status report to the Telegram channel or to a specific recipient.
+    async def send_status_report(self, stats, recipient=None):
+        """
+        Send a status report with statistics.
         
         Args:
-            stats: Dictionary containing statistics to report
-            recipient: Optional username or chat ID to send report to (e.g., @username)
-            
+            stats: Dictionary containing run statistics
+            recipient: Optional chat ID or username to send report to
+        
         Returns:
-            bool: True if report was sent successfully, False otherwise
+            bool: True if message was sent successfully, False otherwise
         """
         try:
-            logger.info("Sending status report")
+            # Format report message
+            message = self._format_status_report(stats)
             
-            # Determine target chat ID
-            target_chat_id = self.report_channel_id
+            # Determine recipient
+            chat_id = self.channel_id  # Default to channel
+            
             if recipient:
-                # If recipient starts with @, it's a username - we can't send to bots
-                if recipient.startswith('@'):
-                    logger.warning(f"Cannot send report to bot username {recipient}. Using configured report channel.")
+                # Handle different recipient formats
+                if isinstance(recipient, str):
+                    if recipient.startswith('@'):
+                        # It's a username - but we can't send to bot usernames
+                        if recipient.lower().endswith('bot'):
+                            self.logger.warning(f"Cannot send directly to bot username {recipient}, try using your own username instead")
+                            return False
+                        chat_id = recipient
+                    else:
+                        # Try to convert to int if it looks like a chat ID
+                        try:
+                            chat_id = int(recipient)
+                        except ValueError:
+                            # If not a number, use as is (could be a username without @)
+                            if not recipient.startswith('@'):
+                                chat_id = f"@{recipient}"
+                            else:
+                                chat_id = recipient
                 else:
-                    # Try to use the recipient as a chat ID
-                    try:
-                        target_chat_id = int(recipient)
-                        logger.info(f"Sending report to chat ID: {target_chat_id}")
-                    except ValueError:
-                        logger.warning(f"Invalid chat ID format: {recipient}. Using configured report channel.")
+                    # If it's already a number (int), use directly
+                    chat_id = recipient
+                
+                self.logger.info(f"Sending report to specific recipient: {chat_id}")
             
-            # Build the message
-            message = f"📊 <b>Shorpy Scraper Status Report</b>\n\n"
-            
-            # Add environment indicator
-            env_type = "Production" if self.channel_id.startswith("-100") else "Development"
-            message += f"<b>Environment:</b> {env_type}\n\n"
-            
-            # Run stats section
-            if "start_time" in stats:
-                message += f"<b>Run Information:</b>\n"
-                message += f"• Start time: {stats['start_time']}\n"
-                if "end_time" in stats:
-                    message += f"• End time: {stats['end_time']}\n"
-                if "duration" in stats:
-                    message += f"• Duration: {stats['duration']}\n"
-                message += "\n"
-            
-            # Posts section
-            message += f"<b>Posts:</b>\n"
-            if "total_posts_found" in stats:
-                message += f"• Total posts found: {stats['total_posts_found']}\n"
-            if "filtered_posts" in stats:
-                message += f"• Already published posts: {stats['filtered_posts']}\n"
-            if "posts_processed" in stats:
-                message += f"• Posts processed: {stats['posts_processed']}\n"
-            if "posts_sent" in stats:
-                message += f"• Posts sent to Telegram: {stats['posts_sent']}\n"
-            
-            # Database stats
-            if "total_posts" in stats:
-                message += f"\n<b>Database:</b>\n"
-                message += f"• Total posts: {stats['total_posts']}\n"
-                if "published_posts" in stats:
-                    message += f"• Published posts: {stats['published_posts']}\n"
-                if "posts_last_24h" in stats:
-                    message += f"• Posts in last 24h: {stats['posts_last_24h']}\n"
-            
-            # System information
-            if "disk_usage" in stats:
-                message += f"\n<b>System:</b>\n"
-                disk = stats["disk_usage"]
-                if "db_size_mb" in disk:
-                    message += f"• Database size: {disk['db_size_mb']} MB\n"
-                if "scraped_posts_size_mb" in disk:
-                    message += f"• Scraped posts: {disk['scraped_posts_size_mb']} MB\n"
-                if "scraped_posts_file_count" in disk:
-                    message += f"• Saved files: {disk['scraped_posts_file_count']}\n"
-            
-            # Error information
-            if "errors" in stats and stats["errors"] > 0:
-                message += f"\n<b>⚠️ Errors:</b> {stats['errors']}\n"
-                if "recent_errors" in stats:
-                    message += "Most recent errors:\n"
-                    for i, error in enumerate(stats["recent_errors"][:3], 1):
-                        short_error = error[-100:] if len(error) > 100 else error
-                        message += f"  {i}. {short_error}\n"
-            
-            # Warning information        
-            if "warnings" in stats and stats["warnings"]:
-                message += f"\n<b>⚠️ Warnings:</b>\n"
-                for warning in stats["warnings"]:
-                    message += f"• {warning}\n"
-            
-            # Add timestamp
-            message += f"\nReport time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            # Send the message
-            await self.bot.send_message(
-                chat_id=target_chat_id,
-                text=message,
-                parse_mode='HTML'
-            )
-            logger.info(f"Status report sent successfully to chat ID: {target_chat_id}")
+            # Send message
+            await self.bot.send_message(chat_id=chat_id, text=message, parse_mode='HTML')
+            self.logger.info(f"Status report sent successfully to {chat_id}")
             return True
         except Exception as e:
-            logger.error(f"Error sending status report: {str(e)}")
-            return False 
+            self.logger.error(f"Error sending status report: {str(e)}")
+            return False
 
     @retry(
         stop=stop_after_attempt(3),
@@ -504,6 +450,83 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error sending last 10 posts: {str(e)}")
             return False
+
+    def _format_status_report(self, stats):
+        """Format a status report message with the provided statistics.
+        
+        Args:
+            stats: Dictionary containing statistics to report
+            
+        Returns:
+            str: Formatted message text
+        """
+        # Build the message
+        message = f"📊 <b>Shorpy Scraper Status Report</b>\n\n"
+        
+        # Add environment indicator
+        env_type = "Production" if str(self.channel_id).startswith("-100") else "Development"
+        message += f"<b>Environment:</b> {env_type}\n\n"
+        
+        # Run stats section
+        if "start_time" in stats:
+            message += f"<b>Run Information:</b>\n"
+            message += f"• Start time: {stats['start_time']}\n"
+            if "end_time" in stats:
+                message += f"• End time: {stats['end_time']}\n"
+            if "duration" in stats:
+                message += f"• Duration: {stats['duration']}\n"
+            message += "\n"
+        
+        # Posts section
+        message += f"<b>Posts:</b>\n"
+        if "total_posts_found" in stats:
+            message += f"• Total posts found: {stats['total_posts_found']}\n"
+        if "filtered_posts" in stats:
+            message += f"• Already published posts: {stats['filtered_posts']}\n"
+        if "posts_processed" in stats:
+            message += f"• Posts processed: {stats['posts_processed']}\n"
+        if "posts_sent" in stats:
+            message += f"• Posts sent to Telegram: {stats['posts_sent']}\n"
+        
+        # Database stats
+        if "total_posts" in stats:
+            message += f"\n<b>Database:</b>\n"
+            message += f"• Total posts: {stats['total_posts']}\n"
+            if "published_posts" in stats:
+                message += f"• Published posts: {stats['published_posts']}\n"
+            if "posts_last_24h" in stats:
+                message += f"• Posts in last 24h: {stats['posts_last_24h']}\n"
+        
+        # System information
+        if "disk_usage" in stats:
+            message += f"\n<b>System:</b>\n"
+            disk = stats["disk_usage"]
+            if "db_size_mb" in disk:
+                message += f"• Database size: {disk['db_size_mb']} MB\n"
+            if "scraped_posts_size_mb" in disk:
+                message += f"• Scraped posts: {disk['scraped_posts_size_mb']} MB\n"
+            if "scraped_posts_file_count" in disk:
+                message += f"• Saved files: {disk['scraped_posts_file_count']}\n"
+        
+        # Error information
+        if "errors" in stats and stats["errors"] > 0:
+            message += f"\n<b>⚠️ Errors:</b> {stats['errors']}\n"
+            if "recent_errors" in stats:
+                message += "Most recent errors:\n"
+                for i, error in enumerate(stats["recent_errors"][:3], 1):
+                    short_error = error[-100:] if len(error) > 100 else error
+                    message += f"  {i}. {short_error}\n"
+        
+        # Warning information        
+        if "warnings" in stats and stats["warnings"]:
+            message += f"\n<b>⚠️ Warnings:</b>\n"
+            for warning in stats["warnings"]:
+                message += f"• {warning}\n"
+        
+        # Add timestamp
+        message += f"\nReport time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        return message
 
 def setup_bot_commands():
     """Set up the bot with command handlers for interactive use."""
