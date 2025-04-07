@@ -268,18 +268,30 @@ def job():
 
 async def run_setup(use_telegram=True, silent=False, report_to=None):
     """
-    Run setup and verification steps
+    Initialize the Telegram bot and test the connection
     
+    Args:
+        use_telegram: Whether to enable Telegram functionality
+        silent: Whether to suppress test messages
+        report_to: Optional recipient for reports
+        
     Returns:
         The initialized TelegramBot instance or None if Telegram is disabled
     """
+    if not use_telegram:
+        logger.info("Telegram is disabled, skipping bot initialization")
+        return None
+        
     try:
-        # Process posts from the website and get the bot instance
-        bot = await process_posts(use_telegram=use_telegram, report_to=report_to)
+        # Just initialize the bot and test the connection
+        bot = TelegramBot()
+        if not silent:
+            await bot.test_connection(silent=True)  # Test but don't send message
+        logger.info("Bot initialized successfully")
         return bot
     
     except Exception as e:
-        print(f"Error in run_setup: {str(e)}")
+        logger.error(f"Error initializing Telegram bot: {str(e)}")
         return None
 
 def print_checkpoint_info():
