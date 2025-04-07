@@ -7,7 +7,7 @@ import sys
 import argparse
 import shutil
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -50,6 +50,75 @@ async def send_run_report(stats, recipient_username=None):
     try:
         bot = TelegramBot()
         logger.info(f"Sending run report to {recipient_username or 'default channel'}")
+        
+        # Make sure disk usage info is populated
+        if "disk_usage" not in stats:
+            stats["disk_usage"] = {}
+            
+            # Try to get database size
+            for db_name in ["shorpy.db", "shorpy_data.db"]:
+                for search_dir in [".", "src", ".."]:
+                    db_path = os.path.join(os.getcwd(), search_dir, db_name)
+                    if os.path.exists(db_path):
+                        db_size = os.path.getsize(db_path) / (1024 * 1024)  # Convert to MB
+                        stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
+                        break
+            
+            # Get scraped posts size
+            for posts_dir_name in ["scraped_posts", "posts", "images"]:
+                posts_dir = os.path.join(os.getcwd(), posts_dir_name)
+                if os.path.exists(posts_dir) and os.path.isdir(posts_dir):
+                    size = 0
+                    file_count = 0
+                    for path, dirs, files in os.walk(posts_dir):
+                        for f in files:
+                            fp = os.path.join(path, f)
+                            size += os.path.getsize(fp)
+                            file_count += 1
+                    
+                    size_mb = size / (1024 * 1024)  # Convert to MB
+                    stats["disk_usage"]["scraped_posts_size_mb"] = round(size_mb, 2) if "scraped_posts_size_mb" not in stats["disk_usage"] else stats["disk_usage"]["scraped_posts_size_mb"]
+                    stats["disk_usage"]["scraped_posts_file_count"] = file_count if "scraped_posts_file_count" not in stats["disk_usage"] else stats["disk_usage"]["scraped_posts_file_count"]
+                    break
+        
+        # Make sure database stats are populated
+        from src.database.connection import db_pool
+        
+        if "total_posts" not in stats:
+            try:
+                # Try with parsed_posts first (older version)
+                try:
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts")
+                    stats["total_posts"] = cursor.fetchone()[0]
+                    
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                    stats["published_posts"] = cursor.fetchone()[0]
+                    
+                    # Get posts from last 24 hours
+                    cursor = db_pool.execute(
+                        "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
+                    )
+                    stats["posts_last_24h"] = cursor.fetchone()[0]
+                except Exception:
+                    # Try with new schema if old one fails
+                    logger.info("Trying with 'posts' table instead of 'parsed_posts'")
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
+                    stats["total_posts"] = cursor.fetchone()[0]
+                    
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
+                    stats["published_posts"] = cursor.fetchone()[0]
+                    
+                    # Get posts from last 24 hours
+                    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
+                    stats["posts_last_24h"] = cursor.fetchone()[0]
+            except Exception as e:
+                logger.error(f"Error getting database stats: {str(e)}")
+                stats["total_posts"] = 0
+                stats["published_posts"] = 0
+                stats["posts_last_24h"] = 0
+        
+        # Send the report
         success = await bot.send_status_report(stats, recipient_username)
         if success:
             logger.info(f"Run report sent successfully to {recipient_username or 'default channel'}")
@@ -64,7 +133,13 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "posts_processed": 0,
         "posts_sent": 0,
-        "errors": 0
+        "errors": 0,
+        "warnings": [],
+        "disk_usage": {
+            "db_size_mb": 0.0,
+            "scraped_posts_size_mb": 0.0,
+            "scraped_posts_file_count": 0
+        }
     }
     
     # Initialize Telegram bot if needed
@@ -93,6 +168,9 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                     logger.error(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
             
+            # Add warning for no posts found
+            stats["warnings"].append("No new posts found during this check")
+            
             # Always prepare stats for reports when no posts are found
             stats["total_posts_found"] = 0
             stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -118,6 +196,9 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                 
             if not posts:
                 logger.info("No new posts to send to Telegram.")
+                
+                # Add warning for all posts being filtered out
+                stats["warnings"].append("All found posts were already published")
                 
                 # Always prepare stats for reports when no new posts are found
                 stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

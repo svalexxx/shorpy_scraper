@@ -120,48 +120,87 @@ class TelegramBot:
                     "total_posts_found": 0,
                     "posts_processed": 0,
                     "posts_sent": 0,
-                    "warnings": ["No new posts found during this check"]
+                    "warnings": ["No new posts found during this check"],
+                    # Initialize disk usage to ensure it's present in the report
+                    "disk_usage": {
+                        "db_size_mb": 0.0,
+                        "scraped_posts_size_mb": 0.0,
+                        "scraped_posts_file_count": 0
+                    }
                 }
                 
                 # Get database stats
                 try:
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
-                    stats["total_posts"] = cursor.fetchone()[0]
-                    
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
-                    stats["published_posts"] = cursor.fetchone()[0]
-                    
-                    # Get posts from last 24 hours
-                    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
-                    stats["posts_last_24h"] = cursor.fetchone()[0]
+                    # Try with parsed_posts first (older version)
+                    try:
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts")
+                        stats["total_posts"] = cursor.fetchone()[0]
+                        
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                        stats["published_posts"] = cursor.fetchone()[0]
+                        
+                        # Get posts from last 24 hours
+                        cursor = db_pool.execute(
+                            "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
+                        )
+                        stats["posts_last_24h"] = cursor.fetchone()[0]
+                    except Exception:
+                        # Try with new schema if old one fails
+                        self.logger.info("Trying with 'posts' table instead of 'parsed_posts'")
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
+                        stats["total_posts"] = cursor.fetchone()[0]
+                        
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
+                        stats["published_posts"] = cursor.fetchone()[0]
+                        
+                        # Get posts from last 24 hours
+                        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
+                        stats["posts_last_24h"] = cursor.fetchone()[0]
                 except Exception as e:
                     self.logger.error(f"Error getting database stats: {str(e)}")
+                    stats["total_posts"] = 0
+                    stats["published_posts"] = 0
+                    stats["posts_last_24h"] = 0
                 
                 # Get disk usage
                 try:
-                    stats["disk_usage"] = {}
-                    
-                    # Database size
-                    db_path = os.path.join(os.getcwd(), "shorpy.db")
-                    if os.path.exists(db_path):
-                        db_size = os.path.getsize(db_path) / (1024 * 1024)  # Convert to MB
+                    # Check for shorpy_data.db (old version)
+                    if os.path.exists("shorpy_data.db"):
+                        db_size = os.path.getsize("shorpy_data.db") / (1024 * 1024)  # Convert to MB
                         stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
                     
-                    # Scraped posts size
-                    posts_dir = os.path.join(os.getcwd(), "scraped_posts")
-                    if os.path.exists(posts_dir):
-                        size = 0
-                        file_count = 0
-                        for path, dirs, files in os.walk(posts_dir):
-                            for f in files:
-                                fp = os.path.join(path, f)
-                                size += os.path.getsize(fp)
-                                file_count += 1
-                        
-                        size_mb = size / (1024 * 1024)  # Convert to MB
-                        stats["disk_usage"]["scraped_posts_size_mb"] = round(size_mb, 2)
-                        stats["disk_usage"]["scraped_posts_file_count"] = file_count
+                    # Check for shorpy.db (new version)
+                    elif os.path.exists("shorpy.db"):
+                        db_size = os.path.getsize("shorpy.db") / (1024 * 1024)  # Convert to MB
+                        stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
+                    
+                    # Find database in src directory or parent directories
+                    else:
+                        for db_name in ["shorpy.db", "shorpy_data.db"]:
+                            for search_dir in [".", "src", ".."]:
+                                db_path = os.path.join(os.getcwd(), search_dir, db_name)
+                                if os.path.exists(db_path):
+                                    db_size = os.path.getsize(db_path) / (1024 * 1024)  # Convert to MB
+                                    stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
+                                    break
+                    
+                    # Scraped posts size - check multiple possible locations
+                    for posts_dir_name in ["scraped_posts", "posts", "images"]:
+                        posts_dir = os.path.join(os.getcwd(), posts_dir_name)
+                        if os.path.exists(posts_dir) and os.path.isdir(posts_dir):
+                            size = 0
+                            file_count = 0
+                            for path, dirs, files in os.walk(posts_dir):
+                                for f in files:
+                                    fp = os.path.join(path, f)
+                                    size += os.path.getsize(fp)
+                                    file_count += 1
+                            
+                            size_mb = size / (1024 * 1024)  # Convert to MB
+                            stats["disk_usage"]["scraped_posts_size_mb"] = round(size_mb, 2)
+                            stats["disk_usage"]["scraped_posts_file_count"] = file_count
+                            break
                 except Exception as e:
                     self.logger.error(f"Error getting disk usage: {str(e)}")
                 
