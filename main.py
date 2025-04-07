@@ -86,18 +86,20 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             # If Telegram is enabled and this is not a test run (real scheduled run)
             if use_telegram and posts_to_process is None and bot:
                 try:
-                    # Send no posts message with detailed report only if requested
-                    send_report = (report_to is not None)
-                    await bot.send_no_posts_message(send_detailed_report=send_report, send_notification=True)
+                    # First, send no posts message to the main channel
+                    await bot.send_no_posts_message(send_detailed_report=False, send_notification=True)
+                    
+                    # Then, if a report recipient is specified, send a separate detailed report
+                    if report_to:
+                        logger.info(f"Sending detailed report to {report_to}")
+                        stats["total_posts_found"] = 0
+                        stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
+                        await send_run_report(stats, report_to)
                 except Exception as e:
                     logger.error(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
-                    
-            # Send the report to a specific recipient if requested
-            stats["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            stats["duration"] = str(datetime.now() - datetime.strptime(stats["start_time"], "%Y-%m-%d %H:%M:%S"))
-            if report_to and bot:
-                await send_run_report(stats, report_to)
+            
             return bot
             
         logger.info(f"Found {len(posts)} posts to process.")
