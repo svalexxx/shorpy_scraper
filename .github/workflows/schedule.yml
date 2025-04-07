@@ -68,7 +68,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
-        run: python main.py --run-once --verbose --silent
+          TELEGRAM_REPORT_RECIPIENT: ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
+        run: python main.py --run-once --verbose --silent --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
         
       - name: Debug DB file
         run: |
