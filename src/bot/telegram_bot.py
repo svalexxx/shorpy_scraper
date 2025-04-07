@@ -315,22 +315,28 @@ class TelegramBot:
             if recipient:
                 # Handle different recipient formats
                 if isinstance(recipient, str):
-                    if recipient.startswith('@'):
-                        # It's a username - but we can't send to bot usernames
-                        if recipient.lower().endswith('bot'):
-                            self.logger.warning(f"Cannot send directly to bot username {recipient}, try using your own username instead")
-                            return False
+                    # Strip any @ symbol if present, telegram can handle usernames with or without it
+                    recipient = recipient.lstrip('@')
+                    
+                    if recipient.lower().endswith('bot'):
+                        # It's a bot - we'll try sending to it anyway, even though Telegram docs
+                        # say bots can't receive messages from other bots, it sometimes works
+                        self.logger.info(f"Attempting to send report to bot: @{recipient}")
                         chat_id = recipient
-                    else:
-                        # Try to convert to int if it looks like a chat ID
+                    elif recipient.startswith('-100'):
+                        # It's a channel ID
                         try:
                             chat_id = int(recipient)
                         except ValueError:
-                            # If not a number, use as is (could be a username without @)
-                            if not recipient.startswith('@'):
-                                chat_id = f"@{recipient}"
-                            else:
-                                chat_id = recipient
+                            chat_id = recipient
+                    else:
+                        # Try to handle as a username
+                        try:
+                            # See if it's a numeric ID
+                            chat_id = int(recipient)
+                        except ValueError:
+                            # Assume it's a username
+                            chat_id = f"@{recipient}"
                 else:
                     # If it's already a number (int), use directly
                     chat_id = recipient
