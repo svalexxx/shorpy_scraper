@@ -38,7 +38,7 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
           TELEGRAM_REPORT_RECIPIENT: ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
-        run: python main.py --last-10-posts --verbose --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
+        run: python main.py --last-10-posts --debug --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
       
       - name: Send button for last 10 posts
         if: ${{ github.event.inputs.type == 'send_button' }}
@@ -47,4 +47,4 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
           TELEGRAM_REPORT_RECIPIENT: ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
-        run: python main.py --send-button --verbose --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }} 
+        run: python main.py --send-button --debug --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }} 

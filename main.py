@@ -82,41 +82,48 @@ async def send_run_report(stats, recipient_username=None):
                     break
         
         # Make sure database stats are populated
-        from src.database.connection import db_pool
-        
-        if "total_posts" not in stats:
-            try:
-                # Try with parsed_posts first (older version)
+        try:
+            # Import database connection
+            from src.database.connection import db_pool
+            
+            if "total_posts" not in stats:
                 try:
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts")
-                    stats["total_posts"] = cursor.fetchone()[0]
-                    
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
-                    stats["published_posts"] = cursor.fetchone()[0]
-                    
-                    # Get posts from last 24 hours
-                    cursor = db_pool.execute(
-                        "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
-                    )
-                    stats["posts_last_24h"] = cursor.fetchone()[0]
-                except Exception:
-                    # Try with new schema if old one fails
-                    logger.info("Trying with 'posts' table instead of 'parsed_posts'")
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
-                    stats["total_posts"] = cursor.fetchone()[0]
-                    
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
-                    stats["published_posts"] = cursor.fetchone()[0]
-                    
-                    # Get posts from last 24 hours
-                    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-                    cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
-                    stats["posts_last_24h"] = cursor.fetchone()[0]
-            except Exception as e:
-                logger.error(f"Error getting database stats: {str(e)}")
-                stats["total_posts"] = 0
-                stats["published_posts"] = 0
-                stats["posts_last_24h"] = 0
+                    # Try with parsed_posts first (older version)
+                    try:
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts")
+                        stats["total_posts"] = cursor.fetchone()[0]
+                        
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                        stats["published_posts"] = cursor.fetchone()[0]
+                        
+                        # Get posts from last 24 hours
+                        cursor = db_pool.execute(
+                            "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
+                        )
+                        stats["posts_last_24h"] = cursor.fetchone()[0]
+                    except Exception:
+                        # Try with new schema if old one fails
+                        logger.info("Trying with 'posts' table instead of 'parsed_posts'")
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
+                        stats["total_posts"] = cursor.fetchone()[0]
+                        
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
+                        stats["published_posts"] = cursor.fetchone()[0]
+                        
+                        # Get posts from last 24 hours
+                        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                        cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
+                        stats["posts_last_24h"] = cursor.fetchone()[0]
+                except Exception as e:
+                    logger.error(f"Error getting database stats: {str(e)}")
+                    stats["total_posts"] = 0
+                    stats["published_posts"] = 0
+                    stats["posts_last_24h"] = 0
+        except ImportError as e:
+            logger.error(f"Error importing db_pool: {str(e)}")
+            stats["total_posts"] = 0
+            stats["published_posts"] = 0
+            stats["posts_last_24h"] = 0
         
         # Send the report
         success = await bot.send_status_report(stats, recipient_username)

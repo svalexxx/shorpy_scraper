@@ -43,6 +43,10 @@ jobs:
             echo "::warning::TELEGRAM_CHANNEL_ID is not set. Please add it to the repository secrets."
             exit 1
           fi
+          if [ -z "${{ secrets.TELEGRAM_REPORT_RECIPIENT }}" ]; then
+            echo "::warning::TELEGRAM_REPORT_RECIPIENT is not set. Please add it to the repository secrets."
+            exit 1
+          fi
           echo "Secrets are properly configured"
       
       - name: Initialize database and directories
@@ -69,7 +73,7 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
           TELEGRAM_REPORT_RECIPIENT: ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
-        run: python main.py --run-once --verbose --silent --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
+        run: python main.py --run-once --debug --silent --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
         
       - name: Debug DB file
         run: |
