@@ -463,6 +463,7 @@ def parse_args():
     # Basic mode flags
     parser.add_argument("--run-once", action="store_true", help="Run once and exit")
     parser.add_argument("--check-only", action="store_true", help="Check for new posts but don't send to Telegram")
+    parser.add_argument("--daemon", action="store_true", help="Run in daemon mode with scheduled tasks")
     
     # Debug and testing options
     parser.add_argument("--debug", action="store_true", help="Enable debug output")

@@ -30,8 +30,8 @@ class TestCommandLineArgs(unittest.TestCase):
         with open("main.py", "r") as f:
             content = f.read()
         
-        # Find all occurrences of args.xxx
-        args_refs = set(re.findall(r'args\.([a-zA-Z_]+)', content))
+        # Find all occurrences of args.xxx - improved regex to prevent partial matches
+        args_refs = set(re.findall(r'args\.([a-zA-Z0-9_]+)(?:\s|[\)\]]|\.|,|$)', content))
         
         # Get the args that are defined in the parser
         parser = self.main_module.parse_args()
@@ -53,8 +53,8 @@ class TestCommandLineArgs(unittest.TestCase):
         with open("main.py", "r") as f:
             content = f.read()
         
-        # Find all occurrences of args.xxx
-        args_refs = set(re.findall(r'args\.([a-zA-Z_]+)', content))
+        # Find all occurrences of args.xxx - improved regex to prevent partial matches
+        args_refs = set(re.findall(r'args\.([a-zA-Z0-9_]+)(?:\s|[\)\]]|\.|,|$)', content))
         
         # Get the args that are defined in the parser
         parser = self.main_module.parse_args()
