@@ -86,12 +86,13 @@ class TelegramBot:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
-    async def send_no_posts_message(self, send_detailed_report=False, send_notification=True):
+    async def send_no_posts_message(self, send_detailed_report=False, send_notification=True, recipient=None):
         """Send a message indicating that no new posts were found.
         
         Args:
-            send_detailed_report: Whether to send a detailed report to the report channel
+            send_detailed_report: Whether to send a detailed report to the report recipient
             send_notification: Whether to send a notification to the main channel
+            recipient: Optional chat ID or username to send the detailed report to
             
         Returns:
             bool: True if the message was sent successfully, False otherwise
@@ -111,7 +112,7 @@ class TelegramBot:
             
             # Send detailed report only if requested
             if send_detailed_report:
-                self.logger.info("Sending detailed report to report channel")
+                self.logger.info(f"Sending detailed report to {recipient or 'report channel'}")
                 # Send detailed report to report channel
                 stats = {
                     "start_time": now,
@@ -221,7 +222,7 @@ class TelegramBot:
                     stats["disk_usage"]["scraped_posts_size_mb"] = 0.0
                     stats["disk_usage"]["scraped_posts_file_count"] = 0
                 
-                await self.send_status_report(stats)
+                await self.send_status_report(stats, recipient)
             
             if send_notification or send_detailed_report:
                 self.logger.info("No posts message and/or report sent successfully")

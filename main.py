@@ -169,8 +169,12 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             # If Telegram is enabled and this is not a test run (real scheduled run)
             if use_telegram and posts_to_process is None and bot:
                 try:
-                    # First, send no posts message to the main channel
-                    await bot.send_no_posts_message(send_detailed_report=False, send_notification=True)
+                    # Send only detailed report to the specified recipient, no notification to main channel
+                    if report_to:
+                        await bot.send_no_posts_message(send_detailed_report=True, send_notification=False, recipient=report_to)
+                    else:
+                        # This is the old behavior: notification to channel with no detailed report
+                        await bot.send_no_posts_message(send_detailed_report=False, send_notification=True)
                 except Exception as e:
                     logger.error(f"Error sending 'no posts' message: {str(e)}")
                     stats["errors"] += 1
