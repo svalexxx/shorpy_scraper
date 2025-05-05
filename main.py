@@ -513,7 +513,8 @@ async def main():
     # Initialize the bot with proper settings
     if args.validate:
         # Run validation routine
-        success = await validate_system()
+        validation_results = run_validation()
+        display_validation_results(validation_results)
         return
 
     # Initialize Telegram bot if credentials are available
