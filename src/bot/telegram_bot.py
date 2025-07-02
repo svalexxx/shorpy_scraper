@@ -1,86 +1,72 @@
+#!/usr/bin/env python3
+"""
+Telegram bot for sending Shorpy posts to a channel.
+"""
+
 import os
-import asyncio
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from telegram.error import TelegramError, NetworkError, TimedOut
-from dotenv import load_dotenv
 import logging
-import requests
 import tempfile
-import uuid
-from typing import Dict, Any, Optional, List, Union, Tuple
+import requests
 from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional, Union
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import NetworkError, TimedOut
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from src.database.connection import db_pool
-
-# Set up logging
-logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Set up logger
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-# Use the same temp directory as main.py
-TEMP_DIR = "temp_images"
-os.makedirs(TEMP_DIR, exist_ok=True)
-
 class TelegramBot:
+    """Telegram bot for sending Shorpy posts to a channel."""
+    
     def __init__(self, channel_id=None):
-        """Initialize the Telegram bot.
+        """Initialize the bot with the given channel ID.
         
         Args:
-            channel_id: Optional override for the channel ID
+            channel_id: Optional channel ID to override environment variable
         """
-        self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-        self.channel_id = channel_id or os.getenv("TELEGRAM_CHANNEL_ID")
-        self.report_channel_id = os.getenv("TELEGRAM_REPORT_CHANNEL_ID", self.channel_id)
-        self.logger = logging.getLogger(__name__)
+        # Get bot token from environment
+        self.token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        if not self.token:
+            raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
         
-        if not self.bot_token:
-            raise ValueError("Missing TELEGRAM_BOT_TOKEN environment variable")
+        # Get channel ID from environment or parameter
+        self.channel_id = channel_id or os.environ.get('TELEGRAM_CHANNEL_ID')
         if not self.channel_id:
-            raise ValueError("Missing TELEGRAM_CHANNEL_ID environment variable")
+            raise ValueError("TELEGRAM_CHANNEL_ID environment variable not set")
         
-        # Initialize the bot
-        self.bot = Bot(token=self.bot_token)
-        self.logger.info(f"Telegram bot initialized with channel ID: {self.channel_id}")
-        if self.report_channel_id != self.channel_id:
-            self.logger.info(f"Reports will be sent to separate channel ID: {self.report_channel_id}")
-        
+        # Initialize bot
+        self.bot = Bot(token=self.token)
+        self.logger = logging.getLogger(__name__)
+    
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
     async def test_connection(self, silent: bool = False) -> bool:
-        """Test the connection to Telegram.
+        """Test if the bot can connect to Telegram and send a message.
         
         Args:
-            silent: If True, skips sending a test message
+            silent: Whether to suppress sending a test message
             
         Returns:
             bool: True if connection successful, False otherwise
         """
         try:
-            if silent:
-                self.logger.info("Testing Telegram connection in silent mode")
-                # Just verify the bot info without sending a message
-                me = await self.bot.get_me()
-                self.logger.info(f"Connected to Telegram as {me.username}")
-                return True
-                
-            self.logger.info("Testing Telegram connection by sending a test message")
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text=f"🔄 Connection test successful! (Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
-            )
-            self.logger.info("Test message sent successfully")
+            if not silent:
+                # Try sending a message
+                await self.bot.send_message(
+                    chat_id=self.channel_id,
+                    text="🤖 Bot connection test successful!"
+                )
+            
             return True
         except Exception as e:
             self.logger.error(f"Error testing Telegram connection: {str(e)}")
             return False
-            
+    
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -93,7 +79,7 @@ class TelegramBot:
             send_detailed_report: Whether to send a detailed report to the report recipient
             send_notification: Whether to send a notification to the main channel
             recipient: Optional chat ID or username to send the detailed report to
-            
+        
         Returns:
             bool: True if the message was sent successfully, False otherwise
         """
@@ -122,7 +108,6 @@ class TelegramBot:
                     "posts_processed": 0,
                     "posts_sent": 0,
                     "warnings": ["No new posts found during this check"],
-                    # Initialize disk usage to ensure it's present in the report
                     "disk_usage": {
                         "db_size_mb": 0.0,
                         "scraped_posts_size_mb": 0.0,
@@ -132,41 +117,19 @@ class TelegramBot:
                 
                 # Get database stats
                 try:
-                    # Try to safely import and use db_pool
-                    try:
-                        from src.database.connection import db_pool
-                        
-                        # Try with parsed_posts first (older version)
-                        try:
-                            cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts")
-                            stats["total_posts"] = cursor.fetchone()[0]
-                            
-                            cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
-                            stats["published_posts"] = cursor.fetchone()[0]
-                            
-                            # Get posts from last 24 hours
-                            cursor = db_pool.execute(
-                                "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
-                            )
-                            stats["posts_last_24h"] = cursor.fetchone()[0]
-                        except Exception:
-                            # Try with new schema if old one fails
-                            self.logger.info("Trying with 'posts' table instead of 'parsed_posts'")
-                            cursor = db_pool.execute("SELECT COUNT(*) FROM posts")
-                            stats["total_posts"] = cursor.fetchone()[0]
-                            
-                            cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE published = 1")
-                            stats["published_posts"] = cursor.fetchone()[0]
-                            
-                            # Get posts from last 24 hours
-                            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-                            cursor = db_pool.execute("SELECT COUNT(*) FROM posts WHERE timestamp > ?", (yesterday,))
-                            stats["posts_last_24h"] = cursor.fetchone()[0]
-                    except ImportError as e:
-                        self.logger.error(f"Error importing db_pool: {str(e)}")
-                        stats["total_posts"] = 12  # Use fallback values
-                        stats["published_posts"] = 0
-                        stats["posts_last_24h"] = 0
+                    from src.database.connection import db_pool
+                    
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts")
+                    stats["total_posts"] = cursor.fetchone()[0]
+                    
+                    cursor = db_pool.execute("SELECT COUNT(*) FROM parsed_posts WHERE published = 1")
+                    stats["published_posts"] = cursor.fetchone()[0]
+                    
+                    # Get posts from last 24 hours
+                    cursor = db_pool.execute(
+                        "SELECT COUNT(*) FROM parsed_posts WHERE parsed_at >= datetime('now', '-1 day')"
+                    )
+                    stats["posts_last_24h"] = cursor.fetchone()[0]
                 except Exception as e:
                     self.logger.error(f"Error getting database stats: {str(e)}")
                     stats["total_posts"] = 12  # Use fallback values
@@ -175,52 +138,27 @@ class TelegramBot:
                 
                 # Get disk usage
                 try:
-                    # Check for shorpy_data.db (old version)
+                    # Check for shorpy_data.db
                     if os.path.exists("shorpy_data.db"):
                         db_size = os.path.getsize("shorpy_data.db") / (1024 * 1024)  # Convert to MB
                         stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
                     
-                    # Check for shorpy.db (new version)
-                    elif os.path.exists("shorpy.db"):
-                        db_size = os.path.getsize("shorpy.db") / (1024 * 1024)  # Convert to MB
-                        stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
-                    
-                    # Find database in src directory or parent directories
-                    else:
-                        for db_name in ["shorpy.db", "shorpy_data.db"]:
-                            for search_dir in [".", "src", ".."]:
-                                db_path = os.path.join(os.getcwd(), search_dir, db_name)
-                                if os.path.exists(db_path):
-                                    db_size = os.path.getsize(db_path) / (1024 * 1024)  # Convert to MB
-                                    stats["disk_usage"]["db_size_mb"] = round(db_size, 2)
-                                    break
-                    
-                    # Use fallback value if no database found
-                    if "db_size_mb" not in stats["disk_usage"]:
-                        stats["disk_usage"]["db_size_mb"] = 0.04  # Use fallback value
-                    
-                    # Scraped posts size - check multiple possible locations
-                    for posts_dir_name in ["scraped_posts", "posts", "images"]:
-                        posts_dir = os.path.join(os.getcwd(), posts_dir_name)
-                        if os.path.exists(posts_dir) and os.path.isdir(posts_dir):
-                            size = 0
-                            file_count = 0
-                            for path, dirs, files in os.walk(posts_dir):
-                                for f in files:
-                                    fp = os.path.join(path, f)
-                                    size += os.path.getsize(fp)
-                                    file_count += 1
-                            
-                            size_mb = size / (1024 * 1024)  # Convert to MB
-                            stats["disk_usage"]["scraped_posts_size_mb"] = round(size_mb, 2)
-                            stats["disk_usage"]["scraped_posts_file_count"] = file_count
-                            break
+                    # Scraped posts size
+                    posts_dir = "scraped_posts"
+                    if os.path.exists(posts_dir) and os.path.isdir(posts_dir):
+                        size = 0
+                        file_count = 0
+                        for path, dirs, files in os.walk(posts_dir):
+                            for f in files:
+                                fp = os.path.join(path, f)
+                                size += os.path.getsize(fp)
+                                file_count += 1
+                        
+                        size_mb = size / (1024 * 1024)  # Convert to MB
+                        stats["disk_usage"]["scraped_posts_size_mb"] = round(size_mb, 2)
+                        stats["disk_usage"]["scraped_posts_file_count"] = file_count
                 except Exception as e:
                     self.logger.error(f"Error getting disk usage: {str(e)}")
-                    # Use fallback values
-                    stats["disk_usage"]["db_size_mb"] = 0.04
-                    stats["disk_usage"]["scraped_posts_size_mb"] = 0.0
-                    stats["disk_usage"]["scraped_posts_file_count"] = 0
                 
                 await self.send_status_report(stats, recipient)
             
@@ -230,11 +168,10 @@ class TelegramBot:
             else:
                 self.logger.info("No messages were sent (both notification and report were disabled)")
                 return False
-                
         except Exception as e:
             self.logger.error(f"Error sending 'no posts' message: {str(e)}")
             return False
-            
+    
     async def download_image(self, image_url: str) -> Optional[str]:
         """Download an image and save it to a temporary file.
         
@@ -262,7 +199,7 @@ class TelegramBot:
         except Exception as e:
             self.logger.error(f"Error downloading image: {str(e)}")
             return None
-            
+    
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -326,195 +263,40 @@ class TelegramBot:
                     parse_mode='HTML'
                 )
                 return True
-                
         except Exception as e:
-            self.logger.error(f"Error sending post to Telegram: {str(e)}")
-            # Try one more time with just the text if sending with image failed
-            try:
-                if 'image_url' in post and post['image_url']:
-                    self.logger.info("Retrying with text only")
-                    await self.bot.send_message(
-                        chat_id=self.channel_id,
-                        text=f"{caption}\n\n(Image could not be sent)",
-                        parse_mode='HTML'
-                    )
-                    return True
-            except Exception as retry_error:
-                self.logger.error(f"Error in retry attempt: {str(retry_error)}")
-                
+            self.logger.error(f"Error sending post: {str(e)}")
             return False
-            
+    
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((NetworkError, TimedOut))
     )
     async def send_status_report(self, stats, recipient=None):
-        """
-        Send a status report with statistics.
+        """Send a status report to the specified recipient or report channel.
         
         Args:
-            stats: Dictionary containing run statistics
-            recipient: Optional chat ID or username to send report to
-        
-        Returns:
-            bool: True if message was sent successfully, False otherwise
+            stats: Dictionary containing statistics to report
+            recipient: Optional chat ID or username to send the report to
         """
         try:
-            # Format report message
+            # Format the report message
             message = self._format_status_report(stats)
             
-            # Determine recipient
-            chat_id = self.channel_id  # Default to channel
-            
-            if recipient:
-                # Handle different recipient formats
-                if isinstance(recipient, str):
-                    # Strip any @ symbol if present, telegram can handle usernames with or without it
-                    recipient = recipient.lstrip('@')
-                    
-                    if recipient.lower().endswith('bot'):
-                        # It's a bot - we'll try sending to it anyway, even though Telegram docs
-                        # say bots can't receive messages from other bots, it sometimes works
-                        self.logger.info(f"Attempting to send report to bot: @{recipient}")
-                        chat_id = recipient
-                    elif recipient.startswith('-100'):
-                        # It's a channel ID
-                        try:
-                            chat_id = int(recipient)
-                        except ValueError:
-                            chat_id = recipient
-                    else:
-                        # Try to handle as a username
-                        try:
-                            # See if it's a numeric ID
-                            chat_id = int(recipient)
-                        except ValueError:
-                            # Assume it's a username
-                            chat_id = f"@{recipient}"
-                else:
-                    # If it's already a number (int), use directly
-                    chat_id = recipient
-                
-                self.logger.info(f"Sending report to specific recipient: {chat_id}")
-            
-            # Send message as plain text
-            await self.bot.send_message(chat_id=chat_id, text=message)
-            self.logger.info(f"Status report sent successfully to {chat_id}")
-            return True
+            # Send to specified recipient or report channel
+            chat_id = recipient or os.environ.get('TELEGRAM_REPORT_CHANNEL_ID')
+            if chat_id:
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode='HTML'
+                )
+                self.logger.info(f"Status report sent to {chat_id}")
+            else:
+                self.logger.warning("No recipient specified for status report")
         except Exception as e:
             self.logger.error(f"Error sending status report: {str(e)}")
-            return False
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((NetworkError, TimedOut))
-    )
-    async def send_latest_posts_button(self) -> bool:
-        """Send a message with a button to retrieve the last 10 posts.
-        
-        Returns:
-            bool: True if message was sent successfully, False otherwise
-        """
-        try:
-            self.logger.info("Sending 'latest posts' button message")
-            
-            # Create an inline keyboard with a button
-            keyboard = [
-                [InlineKeyboardButton("Show Last 10 Posts", callback_data="show_last_10_posts")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Send message with button
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text="📸 Click the button below to see the last 10 Shorpy posts:",
-                reply_markup=reply_markup
-            )
-            
-            self.logger.info("'Latest posts' button message sent successfully")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error sending 'latest posts' button message: {str(e)}")
-            return False
-
-    async def get_last_10_posts(self) -> List[Dict[str, Any]]:
-        """Get the last 10 posts from the database.
-        
-        Returns:
-            List[Dict[str, Any]]: List of posts with their details
-        """
-        try:
-            self.logger.info("Fetching last 10 posts from database")
-            
-            cursor = db_pool.execute(
-                """
-                SELECT post_url, title, image_url, description, parsed_at 
-                FROM parsed_posts 
-                WHERE published = 1
-                ORDER BY parsed_at DESC LIMIT 10
-                """
-            )
-            
-            posts = []
-            for row in cursor.fetchall():
-                posts.append({
-                    'post_url': row[0],
-                    'title': row[1],
-                    'image_url': row[2],
-                    'description': row[3],
-                    'parsed_at': row[4],
-                    'is_published': True
-                })
-            
-            self.logger.info(f"Found {len(posts)} posts in database")
-            return posts
-            
-        except Exception as e:
-            self.logger.error(f"Error fetching last 10 posts: {str(e)}")
-            return []
-
-    async def send_last_10_posts(self) -> bool:
-        """Send the last 10 posts to the Telegram channel.
-        
-        Returns:
-            bool: True if all posts were sent successfully, False otherwise
-        """
-        try:
-            posts = await self.get_last_10_posts()
-            
-            if not posts:
-                await self.bot.send_message(
-                    chat_id=self.channel_id,
-                    text="No posts found in the database."
-                )
-                return True
-            
-            # Send an initial message
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text=f"📷 Here are the last {len(posts)} Shorpy posts:"
-            )
-            
-            # Send each post
-            for post in posts:
-                success = await self.send_post(post)
-                if not success:
-                    self.logger.error(f"Failed to send post: {post['title']}")
-            
-            # Send a final message
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text="End of the last posts list. Visit https://shorpy.com for more historic photos."
-            )
-            
-            return True
-        
-        except Exception as e:
-            self.logger.error(f"Error sending last 10 posts: {str(e)}")
-            return False
-
+    
     def _format_status_report(self, stats):
         """Format a status report message with the provided statistics.
         
@@ -526,11 +308,11 @@ class TelegramBot:
         """
         # Build the message
         message = f"📊 Shorpy Scraper Status Report\n\n"
-        
+            
         # Add environment indicator
         env_type = "Production" if str(self.channel_id).startswith("-100") else "Development"
         message += f"Environment: {env_type}\n\n"
-        
+            
         # Run stats section
         if "start_time" in stats:
             message += f"Run Information:\n"
@@ -540,7 +322,7 @@ class TelegramBot:
             if "duration" in stats:
                 message += f"• Duration: {stats['duration']}\n"
             message += "\n"
-        
+            
         # Posts section
         message += f"Posts:\n"
         if "total_posts_found" in stats:
@@ -550,7 +332,7 @@ class TelegramBot:
         if "posts_sent" in stats:
             message += f"• Posts sent to Telegram: {stats['posts_sent']}\n"
         message += "\n"
-        
+            
         # Database stats
         if "total_posts" in stats:
             message += f"Database:\n"
@@ -560,114 +342,24 @@ class TelegramBot:
             if "posts_last_24h" in stats:
                 message += f"• Posts in last 24h: {stats['posts_last_24h']}\n"
             message += "\n"
-        
-        # System information
+            
+        # Disk usage section
         if "disk_usage" in stats:
-            message += f"System:\n"
-            disk = stats["disk_usage"]
-            if "db_size_mb" in disk:
-                message += f"• Database size: {disk['db_size_mb']} MB\n"
-            if "scraped_posts_size_mb" in disk:
-                message += f"• Scraped posts: {disk['scraped_posts_size_mb']} MB\n"
-            if "scraped_posts_file_count" in disk:
-                message += f"• Saved files: {disk['scraped_posts_file_count']}\n"
+            message += f"Disk Usage:\n"
+            message += f"• Database size: {stats['disk_usage']['db_size_mb']:.2f} MB\n"
+            message += f"• Scraped posts size: {stats['disk_usage']['scraped_posts_size_mb']:.2f} MB\n"
+            message += f"• Scraped posts count: {stats['disk_usage']['scraped_posts_file_count']}\n"
             message += "\n"
-        
-        # Warning information - added before error information to match format        
+            
+        # Warnings section
         if "warnings" in stats and stats["warnings"]:
             message += f"⚠️ Warnings:\n"
             for warning in stats["warnings"]:
                 message += f"• {warning}\n"
             message += "\n"
-        
-        # Error information
+            
+        # Errors section
         if "errors" in stats and stats["errors"] > 0:
-            message += f"⚠️ Errors: {stats['errors']}\n"
-            if "recent_errors" in stats and stats["recent_errors"]:
-                for i, error in enumerate(stats["recent_errors"][:3], 1):
-                    short_error = error[-100:] if len(error) > 100 else error
-                    message += f"• {short_error}\n"
-                message += "\n"
-        
-        # Add timestamp without HTML tags
-        message += f"Report time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        return message
-
-def setup_bot_commands():
-    """Set up the bot with command handlers for interactive use."""
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    if not token:
-        logger.error("TELEGRAM_BOT_TOKEN environment variable is not set")
-        return None
-    
-    # Create the application
-    application = ApplicationBuilder().token(token).build()
-    
-    # Create a TelegramBot instance for command handling
-    bot_instance = TelegramBot()
-    
-    # Define command handlers
-    async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle the /start command."""
-        await update.message.reply_text(
-            "👋 Welcome to the Shorpy Scraper Bot!\n\n"
-            "This bot posts historic photos from Shorpy.com to this channel.\n\n"
-            "Available commands:\n"
-            "/latest - Show the last 10 posts\n"
-            "/status - Show the current status\n"
-            "/help - Show this help message"
-        )
-    
-    async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle the /help command."""
-        await update.message.reply_text(
-            "🔍 Shorpy Scraper Bot Help\n\n"
-            "Available commands:\n"
-            "/latest - Show the last 10 posts\n"
-            "/status - Show the current status\n"
-            "/help - Show this help message"
-        )
-    
-    async def latest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle the /latest command."""
-        await update.message.reply_text("📸 Fetching the last 10 posts from Shorpy.com...")
-        await bot_instance.send_last_10_posts()
-    
-    async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle the /status command."""
-        from src.utils.monitor import get_system_stats
-        
-        try:
-            stats = await get_system_stats()
-            await bot_instance.send_status_report(stats)
-        except Exception as e:
-            logger.error(f"Error in status command: {str(e)}")
-            await update.message.reply_text(f"❌ Error getting status: {str(e)}")
-    
-    async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle button callbacks."""
-        query = update.callback_query
-        await query.answer()
-        
-        if query.data == "show_last_10_posts":
-            await query.edit_message_text(text="📸 Fetching the last 10 posts from Shorpy.com...")
-            await bot_instance.send_last_10_posts()
-    
-    # Add handlers to the application
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("latest", latest_command))
-    application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    
-    return application
-
-def run_bot():
-    """Run the bot in polling mode (for development/testing)."""
-    application = setup_bot_commands()
-    if application:
-        logger.info("Starting bot in polling mode...")
-        application.run_polling()
-    else:
-        logger.error("Could not start bot: application setup failed") 
+            message += f"❌ Errors: {stats['errors']}\n\n"
+            
+        return message 
