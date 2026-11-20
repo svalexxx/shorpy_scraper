@@ -2,6 +2,7 @@ import asyncio
 import schedule
 import time
 import os
+import re
 import json
 import sys
 import argparse
@@ -131,6 +132,13 @@ async def send_run_report(stats, recipient_username=None):
     except Exception as e:
         logger.error(f"Error sending run report: {str(e)}")
 
+def gh_error(message):
+    """Emit a GitHub Actions error annotation (no-op outside Actions). Redacts bot tokens."""
+    if os.getenv("GITHUB_ACTIONS"):
+        message = re.sub(r"bot\d+:[\w-]+", "bot<redacted>", str(message)).replace("\n", " ")
+        print(f"::error::{message[:500]}", flush=True)
+
+
 class ProcessingFailed(Exception):
     """Raised (only when raise_on_error=True) if a run finished with errors."""
 
@@ -159,6 +167,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             logger.info("Telegram bot initialized successfully.")
         except Exception as e:
             logger.error(f"Could not initialize Telegram bot: {str(e)}")
+            gh_error(f"Could not initialize Telegram bot: {e}")
             if raise_on_error:
                 # Don't silently mark posts as parsed without sending them
                 raise
@@ -247,6 +256,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
                         scraper.mark_as_published(post)
                 except Exception as e:
                     logger.error(f"Error sending to Telegram: {str(e)}")
+                    gh_error(f"Error sending to Telegram: {e}")
                     stats["errors"] += 1
             else:
                 # If Telegram is not enabled, just mark as parsed
@@ -272,6 +282,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             await send_run_report(stats, report_to)
         
         if raise_on_error and stats["errors"]:
+            gh_error(f"Run finished with {stats['errors']} error(s); warnings: {stats['warnings']}")
             raise ProcessingFailed(f"Run finished with {stats['errors']} error(s)")
         
         return bot
@@ -279,6 +290,7 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
         raise
     except Exception as e:
         logger.error(f"Error in process_posts: {str(e)}")
+        gh_error(f"Error in process_posts: {e}")
         stats["errors"] += 1
         stats["warnings"].append(f"Error during processing: {str(e)}")
         
@@ -565,4 +577,5 @@ if __name__ == "__main__":
         logger.info("Program stopped by user")
     except Exception as e:
         logger.error(f"Unhandled error: {str(e)}")
+        gh_error(f"Unhandled error: {e}")
         sys.exit(1) 
