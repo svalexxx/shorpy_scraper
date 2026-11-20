@@ -36,6 +36,7 @@ class TestIntegration(unittest.TestCase):
         
         # Create a sample post for testing
         self.sample_post = {
+            'post_id': 'test_post',
             'post_url': 'https://example.com/test_post',
             'title': 'Test Post Title',
             'image_url': 'https://example.com/test_image.jpg',
@@ -68,16 +69,15 @@ class TestIntegration(unittest.TestCase):
         
         # Check that files were created
         self.assertIsNotNone(result)
-        self.assertEqual(len(result), 2)  # Should return paths to HTML and JSON files
+        self.assertEqual(len(result), 2)  # Should return paths to metadata.json and content.txt
         
         # Check that both files exist
         self.assertTrue(os.path.exists(result[0]))
         self.assertTrue(os.path.exists(result[1]))
         
-        # Check that HTML file contains post title
-        with open(result[0], 'r') as f:
-            html_content = f.read()
-            self.assertIn(self.sample_post['title'], html_content)
+        # Check that the content file contains the post title
+        with open(result[1], 'r') as f:
+            self.assertIn(self.sample_post['title'], f.read())
     
     @patch('main.TelegramBot')
     @patch('main.ShorpyScraper')
