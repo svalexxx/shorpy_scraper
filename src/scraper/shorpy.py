@@ -26,20 +26,25 @@ class ShorpyScraper:
             print(f"Error extracting post ID: {str(e)}")
         return None
     
-    def _fetch_front_page(self, attempts=3, timeout=30):
+    # Shorpy runs its own nameservers, which occasionally fail to resolve from CI runners.
+    # Alternate between the www and apex hostnames and retry with growing delays.
+    FETCH_URLS = ["https://www.shorpy.com", "https://shorpy.com"]
+
+    def _fetch_front_page(self, attempts=5, timeout=30):
         """Fetch the Shorpy front page with a timeout and retries."""
         headers = {'User-Agent': self.USER_AGENT}
         last_error = None
         for attempt in range(1, attempts + 1):
+            url = self.FETCH_URLS[(attempt - 1) % len(self.FETCH_URLS)]
             try:
-                response = requests.get(self.BASE_URL, headers=headers, timeout=timeout)
+                response = requests.get(url, headers=headers, timeout=timeout)
                 response.raise_for_status()
                 return response
             except requests.RequestException as e:
                 last_error = e
-                print(f"Fetch attempt {attempt}/{attempts} failed: {str(e)}")
+                print(f"Fetch attempt {attempt}/{attempts} ({url}) failed: {str(e)}")
                 if attempt < attempts:
-                    time.sleep(5 * attempt)
+                    time.sleep(10 * attempt)
         raise last_error
 
     def get_latest_posts(self):
