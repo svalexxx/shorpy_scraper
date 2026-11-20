@@ -67,6 +67,18 @@ jobs:
             exit 1
           fi
 
+      - name: Use public DNS resolvers
+        # Shorpy runs its own nameservers, which the runner's default resolver often fails to reach.
+        run: |
+          IFACE=$(ip route show default | awk '{print $5; exit}')
+          sudo resolvectl dns "$IFACE" 1.1.1.1 8.8.8.8 || echo "::warning::could not set DNS via resolvectl"
+          sudo resolvectl flush-caches || true
+          if getent hosts www.shorpy.com; then
+            echo "www.shorpy.com resolves"
+          else
+            echo "::warning::www.shorpy.com still does not resolve"
+          fi
+
       - name: Run scraper
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
