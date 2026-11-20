@@ -73,7 +73,7 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_REPORT_CHANNEL_ID: ${{ secrets.TELEGRAM_REPORT_CHANNEL_ID }}
           TELEGRAM_REPORT_RECIPIENT: ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
-        run: python main.py --run-once --debug --silent --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
+        run: python main.py --silent --report-to ${{ secrets.TELEGRAM_REPORT_RECIPIENT }}
         
       - name: Debug DB file
         run: |

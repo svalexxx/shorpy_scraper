@@ -55,15 +55,15 @@ fi
 case "$1" in
     run)
         echo -e "${GREEN}Running scraper once...${NC}"
-        python main.py --run-once
+        python main.py
         ;;
     run-silent)
         echo -e "${GREEN}Running scraper in silent mode...${NC}"
-        python main.py --run-once --silent
+        python main.py --silent
         ;;
     run-report)
         echo -e "${GREEN}Running scraper once with report to $REPORT_BOT...${NC}"
-        python main.py --run-once --report-to $REPORT_BOT
+        python main.py --report-to $REPORT_BOT
         ;;
     schedule)
         echo -e "${GREEN}Running on a 12-hour schedule...${NC}"
