@@ -10,14 +10,14 @@ import os
 import tempfile
 import shutil
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from main import process_posts, save_post_locally
 
-class TestIntegration(unittest.TestCase):
+class TestIntegration(unittest.IsolatedAsyncioTestCase):
     """Integration tests for the Shorpy Scraper application"""
     
     def setUp(self):
@@ -88,7 +88,7 @@ class TestIntegration(unittest.TestCase):
         mock_scraper.get_latest_posts.return_value = []
         
         mock_bot = mock_telegram_class.return_value
-        mock_bot.send_no_posts_message.return_value = True
+        mock_bot.send_no_posts_message = AsyncMock(return_value=True)
         
         # Call the function
         await process_posts()
@@ -96,7 +96,7 @@ class TestIntegration(unittest.TestCase):
         # Verify expected calls
         mock_scraper.get_latest_posts.assert_called_once()
         mock_telegram_class.assert_called_once()
-        mock_bot.send_no_posts_message.assert_called_once()
+        mock_bot.send_no_posts_message.assert_awaited_once()
     
     @patch('main.TelegramBot')
     @patch('main.ShorpyScraper')
@@ -108,7 +108,7 @@ class TestIntegration(unittest.TestCase):
         mock_scraper.get_latest_posts.return_value = [self.sample_post]
         
         mock_bot = mock_telegram_class.return_value
-        mock_bot.send_post.return_value = True
+        mock_bot.send_post = AsyncMock(return_value=True)
         
         mock_save_locally.return_value = ['/tmp/test.html', '/tmp/test.json']
         
@@ -133,7 +133,7 @@ class TestIntegration(unittest.TestCase):
         mock_scraper.get_latest_posts.return_value = [self.sample_post]
         
         mock_bot = mock_telegram_class.return_value
-        mock_bot.send_post.side_effect = Exception("Test error")
+        mock_bot.send_post = AsyncMock(side_effect=Exception("Test error"))
         
         mock_save_locally.return_value = ['/tmp/test.html', '/tmp/test.json']
         
@@ -145,31 +145,9 @@ class TestIntegration(unittest.TestCase):
         mock_telegram_class.assert_called_once()
         mock_bot.send_post.assert_called_once()
         mock_save_locally.assert_called_once()
-        mock_scraper.mark_as_parsed.assert_called_once()
-        # Should not be called due to the error
+        # Posts are only marked after a successful send, so failed posts are retried
+        mock_scraper.mark_as_parsed.assert_not_called()
         mock_scraper.mark_as_published.assert_not_called()
 
-def run_async_tests():
-    """Run async tests"""
-    # Create a test suite with our async tests
-    suite = unittest.TestSuite()
-    suite.addTest(TestIntegration('test_process_posts_no_posts'))
-    suite.addTest(TestIntegration('test_process_posts_with_posts'))
-    suite.addTest(TestIntegration('test_process_posts_with_error'))
-    
-    # Run the tests
-    runner = unittest.TextTestRunner()
-    result = runner.run(suite)
-    return result.wasSuccessful()
-
 if __name__ == '__main__':
-    # Run synchronous tests
-    sync_runner = unittest.TextTestRunner()
-    sync_suite = unittest.TestLoader().loadTestsFromTestCase(TestIntegration)
-    sync_result = sync_runner.run(unittest.TestSuite([
-        test for test in sync_suite 
-        if not test._testMethodName.startswith('test_process_posts')
-    ]))
-    
-    # Run async tests using asyncio
-    asyncio.run(run_async_tests()) 
+    unittest.main()
