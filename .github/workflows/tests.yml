@@ -36,7 +36,7 @@ jobs:
         
     - name: Run integration tests
       run: |
-        PYTHONPATH=$PYTHONPATH:$(pwd) python -m pytest tests/test_integration.py -v
+        PYTHONPATH=$PYTHONPATH:$(pwd) python -m pytest tests/test_args.py tests/test_integration.py -v
         
     - name: Run app with validation
       run: |
