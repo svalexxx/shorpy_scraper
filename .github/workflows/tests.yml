@@ -34,7 +34,7 @@ jobs:
       run: |
         python -m tests.test_args
         
-    - name: Run integration tests
+    - name: Run tests
       run: |
         PYTHONPATH=$PYTHONPATH:$(pwd) python -m pytest tests/test_args.py tests/test_integration.py -v
         

@@ -10,7 +10,7 @@ This is a Python-based scraper for Shorpy.com that downloads historical images a
 5. Configuration Management
 
 ## Prerequisites
-- Python 3.9+ (3.7+ minimum)
+- Python 3.12 (used in CI and Docker)
 - SQLite 3.x
 - System Requirements:
   - 1GB RAM minimum
@@ -644,7 +644,7 @@ Test environment setup:
 
 ### Docker Deployment
 - Container Configuration:
-  - Base image: `python:3.9-slim`
+  - Base image: `python:3.12-slim`
   - System dependencies: gcc
   - Working directory: `/app`
   - Environment variables:
