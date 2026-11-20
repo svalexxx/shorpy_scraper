@@ -131,7 +131,12 @@ async def send_run_report(stats, recipient_username=None):
     except Exception as e:
         logger.error(f"Error sending run report: {str(e)}")
 
-async def process_posts(use_telegram=True, posts_to_process=None, delete_after_processing=False, report_to=None):
+class ProcessingFailed(Exception):
+    """Raised (only when raise_on_error=True) if a run finished with errors."""
+
+
+async def process_posts(use_telegram=True, posts_to_process=None, delete_after_processing=False, report_to=None,
+                        raise_on_error=False):
     scraper = ShorpyScraper()
     stats = {
         "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -154,6 +159,9 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             logger.info("Telegram bot initialized successfully.")
         except Exception as e:
             logger.error(f"Could not initialize Telegram bot: {str(e)}")
+            if raise_on_error:
+                # Don't silently mark posts as parsed without sending them
+                raise
             use_telegram = False
             stats["errors"] += 1
     
@@ -263,7 +271,12 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             logger.info(f"Sending detailed report to {report_to}")
             await send_run_report(stats, report_to)
         
+        if raise_on_error and stats["errors"]:
+            raise ProcessingFailed(f"Run finished with {stats['errors']} error(s)")
+        
         return bot
+    except ProcessingFailed:
+        raise
     except Exception as e:
         logger.error(f"Error in process_posts: {str(e)}")
         stats["errors"] += 1
@@ -274,6 +287,8 @@ async def process_posts(use_telegram=True, posts_to_process=None, delete_after_p
             logger.info(f"Sending error report to {report_to}")
             await send_run_report(stats, report_to)
         
+        if raise_on_error:
+            raise
         return bot
 
 def save_post_locally(post):
@@ -539,7 +554,8 @@ async def main():
     await process_posts(
         use_telegram=not args.no_telegram,
         delete_after_processing=args.delete_files,
-        report_to=args.report_to
+        report_to=args.report_to,
+        raise_on_error=True
     )
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from src.database.models import storage
 import re
+import time
 
 class ShorpyScraper:
     BASE_URL = "https://www.shorpy.com"
@@ -25,12 +26,26 @@ class ShorpyScraper:
             print(f"Error extracting post ID: {str(e)}")
         return None
     
+    def _fetch_front_page(self, attempts=3, timeout=30):
+        """Fetch the Shorpy front page with a timeout and retries."""
+        headers = {'User-Agent': self.USER_AGENT}
+        last_error = None
+        for attempt in range(1, attempts + 1):
+            try:
+                response = requests.get(self.BASE_URL, headers=headers, timeout=timeout)
+                response.raise_for_status()
+                return response
+            except requests.RequestException as e:
+                last_error = e
+                print(f"Fetch attempt {attempt}/{attempts} failed: {str(e)}")
+                if attempt < attempts:
+                    time.sleep(5 * attempt)
+        raise last_error
+
     def get_latest_posts(self):
         try:
             print(f"Fetching posts from {self.BASE_URL}")
-            headers = {'User-Agent': self.USER_AGENT}
-            response = requests.get(self.BASE_URL, headers=headers)
-            response.raise_for_status()
+            response = self._fetch_front_page()
             
             print(f"Response status: {response.status_code}")
             print(f"Response length: {len(response.text)} bytes")
@@ -161,7 +176,8 @@ class ShorpyScraper:
             print(f"Error scraping Shorpy: {str(e)}")
             import traceback
             traceback.print_exc()
-            return []
+            # Surface the failure instead of pretending there are no new posts
+            raise
     
     def get_test_posts(self, num_posts=2):
         """Get a specific number of posts for testing, ignoring whether they've been processed before."""
