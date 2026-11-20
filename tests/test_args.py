@@ -10,6 +10,7 @@ import sys
 import os
 import importlib.util
 from argparse import Namespace
+from unittest.mock import patch
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -34,7 +35,8 @@ class TestCommandLineArgs(unittest.TestCase):
         args_refs = set(re.findall(r'args\.([a-zA-Z0-9_]+)(?:\s|[\)\]]|\.|,|$)', content))
         
         # Get the args that are defined in the parser
-        parser = self.main_module.parse_args()
+        with patch.object(sys, 'argv', ['main.py']):
+            parser = self.main_module.parse_args()
         
         # Create a namespace with all the arguments from the parser
         args = vars(parser)
@@ -57,7 +59,8 @@ class TestCommandLineArgs(unittest.TestCase):
         args_refs = set(re.findall(r'args\.([a-zA-Z0-9_]+)(?:\s|[\)\]]|\.|,|$)', content))
         
         # Get the args that are defined in the parser
-        parser = self.main_module.parse_args()
+        with patch.object(sys, 'argv', ['main.py']):
+            parser = self.main_module.parse_args()
         
         # Create a namespace with all the arguments from the parser
         args = vars(parser)

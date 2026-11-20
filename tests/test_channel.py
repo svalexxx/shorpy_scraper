@@ -7,7 +7,8 @@ from telegram.error import TelegramError
 import requests
 import tempfile
 import uuid
-from models import storage
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.database.models import storage
 
 load_dotenv()
 
